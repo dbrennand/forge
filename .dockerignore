@@ -1,5 +1,7 @@
+.coverage
 .git
 .github
+.uv-cache
 .mypy_cache
 .pytest_cache
 .ruff_cache
@@ -8,4 +10,3 @@ __pycache__
 build
 dist
 *.egg-info
-
