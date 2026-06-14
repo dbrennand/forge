@@ -24,8 +24,8 @@ uv run forge --help
 ## Commands
 
 ```bash
-forge shell --workspace /path/to/repo
-forge codex --workspace /path/to/repo
+forge shell /path/to/repo
+forge codex /path/to/repo
 forge run --workspace /path/to/repo "explain this repository"
 ```
 

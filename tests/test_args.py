@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from forge.args import parse_cli_args
 from forge.models import CodexOptions, RunOptions, ShellOptions
 
@@ -32,7 +34,7 @@ def test_parse_run_command() -> None:
 
 
 def test_parse_codex_command() -> None:
-    parsed = parse_cli_args(["codex", "--workspace", "/tmp/repo", "--yolo"])
+    parsed = parse_cli_args(["codex", "--yolo", "/tmp/repo"])
 
     assert isinstance(parsed, CodexOptions)
     assert parsed.workspace == Path("/tmp/repo")
@@ -40,7 +42,17 @@ def test_parse_codex_command() -> None:
 
 
 def test_parse_shell_command() -> None:
-    parsed = parse_cli_args(["shell", "--workspace", "/tmp/repo"])
+    parsed = parse_cli_args(["shell", "/tmp/repo"])
 
     assert isinstance(parsed, ShellOptions)
     assert parsed.workspace == Path("/tmp/repo")
+
+
+def test_run_requires_workspace_option() -> None:
+    with pytest.raises(SystemExit):
+        parse_cli_args(["run", "hello"])
+
+
+def test_codex_requires_project_argument() -> None:
+    with pytest.raises(SystemExit):
+        parse_cli_args(["codex"])
