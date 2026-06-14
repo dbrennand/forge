@@ -6,6 +6,7 @@ from forge.codex_config import prepare_container_config, sanitize_config
 
 
 def test_sanitize_config_removes_desktop_only_settings() -> None:
+    """Remove desktop-only Codex settings from mounted config content."""
     sanitized = sanitize_config(
         """model = "gpt-5.5"
 notify = ["/Applications/Codex.app/Contents/Resources/bin/notify", "turn-ended"]
@@ -24,7 +25,7 @@ enabled = true
 """
     )
 
-    assert 'notify = [' not in sanitized
+    assert "notify = [" not in sanitized
     assert "[mcp_servers.node_repl]" not in sanitized
     assert "[mcp_servers.node_repl.env]" not in sanitized
     assert "[desktop]" not in sanitized
@@ -33,10 +34,12 @@ enabled = true
 
 
 def test_prepare_container_config_returns_none_without_config(tmp_path: Path) -> None:
+    """Return `None` when no host config exists to sanitize."""
     assert prepare_container_config(tmp_path) is None
 
 
 def test_prepare_container_config_writes_sanitized_copy(tmp_path: Path) -> None:
+    """Write a sanitized temporary config copy for container use."""
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         """notify = ["bad"]

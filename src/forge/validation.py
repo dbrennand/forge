@@ -6,6 +6,17 @@ from forge.errors import ValidationError
 
 
 def resolve_workspace(workspace: Path) -> Path:
+    """Resolve and validate the requested workspace directory.
+
+    Args:
+        workspace: User-supplied workspace path.
+
+    Returns:
+        Path: Absolute resolved workspace path.
+
+    Raises:
+        ValidationError: If the path does not exist or is not a directory.
+    """
     resolved = workspace.expanduser().resolve()
     if not resolved.exists():
         raise ValidationError(f"Workspace does not exist: {resolved}")
@@ -15,6 +26,17 @@ def resolve_workspace(workspace: Path) -> Path:
 
 
 def validate_codex_home(home: Path) -> Path:
+    """Validate that the host Codex home contains required authentication state.
+
+    Args:
+        home: Host home directory.
+
+    Returns:
+        Path: Resolved `.codex` directory.
+
+    Raises:
+        ValidationError: If the auth file is missing.
+    """
     codex_home = home.expanduser() / ".codex"
     auth_file = codex_home / "auth.json"
     if not auth_file.is_file():
@@ -23,6 +45,17 @@ def validate_codex_home(home: Path) -> Path:
 
 
 def validate_gh_config(home: Path) -> Path:
+    """Validate that the host GitHub CLI config directory exists.
+
+    Args:
+        home: Host home directory.
+
+    Returns:
+        Path: Resolved GitHub CLI config directory.
+
+    Raises:
+        ValidationError: If the directory is missing.
+    """
     gh_config = home.expanduser() / ".config" / "gh"
     if not gh_config.is_dir():
         raise ValidationError(f"Missing GitHub CLI config directory: {gh_config}")
@@ -30,6 +63,14 @@ def validate_gh_config(home: Path) -> Path:
 
 
 def detect_git_repository(workspace: Path) -> bool:
+    """Detect whether the workspace is backed by a Git repository or worktree.
+
+    Args:
+        workspace: Candidate workspace directory.
+
+    Returns:
+        bool: `True` when `.git` resolves to a repository directory.
+    """
     dot_git = workspace / ".git"
     if dot_git.is_dir():
         return True
@@ -54,5 +95,14 @@ def detect_git_repository(workspace: Path) -> bool:
 
 
 def validate_host_identity(uid: int, gid: int) -> None:
+    """Reject Forge execution as the root user or group.
+
+    Args:
+        uid: Host user identifier.
+        gid: Host group identifier.
+
+    Raises:
+        ValidationError: If Forge is invoked with root ownership.
+    """
     if uid == 0 or gid == 0:
         raise ValidationError("Forge must be invoked as a non-root user")

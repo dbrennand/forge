@@ -9,6 +9,7 @@ from forge.models import CodexOptions, RunOptions, ShellOptions
 
 
 def test_parse_run_command() -> None:
+    """Parse `forge run` arguments into `RunOptions`."""
     parsed = parse_cli_args(
         [
             "run",
@@ -34,6 +35,7 @@ def test_parse_run_command() -> None:
 
 
 def test_parse_codex_command() -> None:
+    """Parse `forge codex` arguments into `CodexOptions`."""
     parsed = parse_cli_args(["codex", "--yolo", "/tmp/repo"])
 
     assert isinstance(parsed, CodexOptions)
@@ -42,6 +44,7 @@ def test_parse_codex_command() -> None:
 
 
 def test_parse_shell_command() -> None:
+    """Parse `forge shell` arguments into `ShellOptions`."""
     parsed = parse_cli_args(["shell", "/tmp/repo"])
 
     assert isinstance(parsed, ShellOptions)
@@ -49,10 +52,12 @@ def test_parse_shell_command() -> None:
 
 
 def test_run_requires_workspace_option() -> None:
+    """Reject `forge run` when the required workspace option is omitted."""
     with pytest.raises(SystemExit):
         parse_cli_args(["run", "hello"])
 
 
 def test_codex_requires_project_argument() -> None:
+    """Reject `forge codex` when the project argument is omitted."""
     with pytest.raises(SystemExit):
         parse_cli_args(["codex"])

@@ -22,6 +22,7 @@ from forge.models import ContainerRequest, VolumeMount
 
 
 def make_request(tmp_path: Path, *, keep_container: bool = False) -> ContainerRequest:
+    """Build a representative container request for Docker API tests."""
     workspace = tmp_path / "repo"
     workspace.mkdir()
     codex = tmp_path / ".codex"
@@ -55,6 +56,7 @@ def make_request(tmp_path: Path, *, keep_container: bool = False) -> ContainerRe
 
 
 def test_build_container_kwargs(tmp_path: Path) -> None:
+    """Build Docker create kwargs including Forge-managed mounts and labels."""
     request = make_request(tmp_path)
     kwargs = build_container_kwargs(request)
 
@@ -75,12 +77,14 @@ def test_build_container_kwargs(tmp_path: Path) -> None:
 
 
 def test_build_container_kwargs_keep_container(tmp_path: Path) -> None:
+    """Disable Docker auto-removal when Forge keeps the container."""
     request = make_request(tmp_path, keep_container=True)
     kwargs = build_container_kwargs(request)
     assert kwargs["auto_remove"] is False
 
 
 def test_build_container_kwargs_sets_interactive_term_fallback(tmp_path: Path) -> None:
+    """Default interactive sessions to a usable terminal type when missing."""
     request = make_request(tmp_path)
     request = ContainerRequest(
         command_name=request.command_name,
@@ -105,6 +109,7 @@ def test_build_container_kwargs_sets_interactive_term_fallback(tmp_path: Path) -
 
 
 def test_build_container_kwargs_omits_nested_sandbox_settings(tmp_path: Path) -> None:
+    """Omit relaxed security options when nested sandboxing is disabled."""
     request = make_request(tmp_path)
     request = ContainerRequest(
         command_name=request.command_name,
@@ -129,17 +134,22 @@ def test_build_container_kwargs_omits_nested_sandbox_settings(tmp_path: Path) ->
 
 
 def test_signal_to_docker_name() -> None:
+    """Map forwarded host signals to Docker signal names."""
     assert signal_to_docker_name(signal.SIGINT) == "SIGINT"
     assert signal_to_docker_name(signal.SIGTERM) == "SIGTERM"
     assert signal_to_docker_name(signal.SIGHUP) == "SIGHUP"
 
 
 def test_resize_terminal_uses_current_terminal_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resize the container using the current terminal dimensions."""
     runner = DockerRunner(client=object())
     observed: list[tuple[int, int]] = []
 
     class FakeContainer:
+        """Capture terminal resize dimensions for assertions."""
+
         def resize(self, height: int, width: int) -> None:
+            """Record requested resize dimensions."""
             observed.append((height, width))
 
     monkeypatch.setattr(
@@ -155,7 +165,10 @@ def test_resize_terminal_uses_current_terminal_size(monkeypatch: pytest.MonkeyPa
 def test_terminal_size_uses_fallback_when_fd_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Return the fallback terminal size when querying the fd fails."""
+
     def raise_os_error(fd: int) -> os.terminal_size:
+        """Raise an OS error to simulate a missing TTY."""
         raise OSError("no tty")
 
     monkeypatch.setattr("forge.docker_api.os.get_terminal_size", raise_os_error)
@@ -164,6 +177,7 @@ def test_terminal_size_uses_fallback_when_fd_is_unavailable(
 
 
 def test_signal_forwarder_uses_resize_callback_for_sigwinch() -> None:
+    """Dispatch resize signals to the resize callback instead of Docker."""
     if not hasattr(signal, "SIGWINCH"):
         pytest.skip("SIGWINCH is not available on this platform")
 
@@ -177,6 +191,7 @@ def test_signal_forwarder_uses_resize_callback_for_sigwinch() -> None:
 
 
 def test_raw_attached_socket_uses_underlying_socket() -> None:
+    """Unwrap Docker socket attachments to their raw socket object."""
     raw_socket = object()
     attachment = SimpleNamespace(_sock=raw_socket)
 
@@ -184,28 +199,37 @@ def test_raw_attached_socket_uses_underlying_socket() -> None:
 
 
 def test_raw_attached_socket_accepts_socket_without_wrapper() -> None:
+    """Accept already-raw sockets without modification."""
     raw_socket = object()
 
     assert _raw_attached_socket(raw_socket) is raw_socket
 
 
 def test_close_attached_socket_closes_wrapper_response_before_attachment() -> None:
+    """Close wrapper responses before closing the attachment itself."""
     events: list[str] = []
 
     class FakeAttachment:
+        """Track attachment close ordering."""
+
         def __init__(self) -> None:
+            """Initialize a fake attachment with a wrapper response slot."""
             self.closed = False
             self._sock = SimpleNamespace()
             self._response: object | None = None
 
         def close(self) -> None:
+            """Record that the attachment was closed."""
             self.closed = True
             events.append("attachment.close")
 
     attachment = FakeAttachment()
 
     class FakeResponse:
+        """Assert that response cleanup happens before attachment cleanup."""
+
         def close(self) -> None:
+            """Record response cleanup while enforcing call order."""
             if attachment.closed:
                 raise AssertionError("response closed after attachment")
             events.append("response.close")
@@ -220,21 +244,29 @@ def test_close_attached_socket_closes_wrapper_response_before_attachment() -> No
 
 
 def test_close_attached_socket_closes_raw_socket_response_before_attachment() -> None:
+    """Close raw-socket responses before closing the attachment wrapper."""
     events: list[str] = []
 
     class FakeAttachment:
+        """Track close ordering for raw-socket response cleanup."""
+
         def __init__(self) -> None:
+            """Initialize a fake attachment with a wrapped raw socket."""
             self.closed = False
             self._sock = SimpleNamespace()
 
         def close(self) -> None:
+            """Record that the attachment was closed."""
             self.closed = True
             events.append("attachment.close")
 
     attachment = FakeAttachment()
 
     class FakeResponse:
+        """Assert that raw-socket response cleanup happens before attachment cleanup."""
+
         def close(self) -> None:
+            """Record response cleanup while enforcing call order."""
             if attachment.closed:
                 raise AssertionError("response closed after attachment")
             events.append("response.close")
@@ -248,24 +280,32 @@ def test_close_attached_socket_closes_raw_socket_response_before_attachment() ->
 
 
 def test_wait_for_container_uses_cached_exit_code_after_auto_remove() -> None:
+    """Use cached container state when wait loses the auto-removed container."""
     runner = DockerRunner(client=object())
 
     class FakeContainer:
+        """Simulate an auto-removed container with cached state."""
+
         attrs: dict[str, dict[str, int]] = {"State": {"ExitCode": 0}}
 
         def wait(self) -> object:
+            """Raise `NotFound` to emulate auto-removal after exit."""
             raise NotFound("missing")
 
     assert runner._wait_for_container(FakeContainer()) == 0
 
 
 def test_wait_for_container_requires_cached_exit_code_when_missing() -> None:
+    """Raise when auto-removed containers have no cached exit code."""
     runner = DockerRunner(client=object())
 
     class FakeContainer:
+        """Simulate an auto-removed container without cached state."""
+
         attrs: dict[str, dict[str, int]] = {"State": {}}
 
         def wait(self) -> object:
+            """Raise `NotFound` to emulate auto-removal after exit."""
             raise NotFound("missing")
 
     with pytest.raises(ContainerRuntimeError):

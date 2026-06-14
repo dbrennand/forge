@@ -11,6 +11,7 @@ from forge.models import CodexOptions, RunOptions, ShellOptions
 
 @pytest.fixture
 def home(tmp_path: Path) -> Path:
+    """Create a minimal fake home directory with Codex and GitHub config."""
     codex_home = tmp_path / ".codex"
     codex_home.mkdir()
     (codex_home / "auth.json").write_text("{}", encoding="utf-8")
@@ -21,6 +22,7 @@ def home(tmp_path: Path) -> Path:
 
 
 def test_build_container_request_for_run(tmp_path: Path, home: Path) -> None:
+    """Build a non-interactive container request from run options."""
     workspace = tmp_path / "repo"
     workspace.mkdir()
     request = RunOptions(
@@ -61,6 +63,7 @@ def test_build_container_request_for_run(tmp_path: Path, home: Path) -> None:
 
 
 def test_build_container_request_for_git_workspace(tmp_path: Path, home: Path) -> None:
+    """Build an interactive Codex request without skipping git checks for repos."""
     workspace = tmp_path / "repo"
     workspace.mkdir()
     (workspace / ".git").mkdir()
@@ -86,6 +89,7 @@ def test_build_container_request_for_git_workspace(tmp_path: Path, home: Path) -
 
 
 def test_build_container_request_for_shell(tmp_path: Path, home: Path) -> None:
+    """Build an interactive shell request without nested sandboxing."""
     workspace = tmp_path / "repo"
     workspace.mkdir()
     request = ShellOptions(
@@ -104,6 +108,7 @@ def test_build_container_request_for_shell(tmp_path: Path, home: Path) -> None:
 def test_build_container_request_rejects_reserved_volume_target_bypass(
     tmp_path: Path, home: Path
 ) -> None:
+    """Reject extra mounts that normalize into reserved container paths."""
     workspace = tmp_path / "repo"
     workspace.mkdir()
     request = RunOptions(
@@ -122,6 +127,7 @@ def test_build_container_request_rejects_reserved_volume_target_bypass(
 def test_build_container_request_rejects_reserved_host_volume_source(
     tmp_path: Path, home: Path
 ) -> None:
+    """Reject extra mounts that reuse reserved host source paths."""
     workspace = tmp_path / "repo"
     workspace.mkdir()
     request = RunOptions(

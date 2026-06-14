@@ -31,6 +31,19 @@ def build_container_request(
     uid: int | None = None,
     gid: int | None = None,
 ) -> ContainerRequest:
+    """Build a validated container execution request from CLI options.
+
+    Args:
+        request: Parsed CLI options for the requested Forge command.
+        environ: Environment mapping to inspect for image and forwarded variables.
+        cwd: Working directory used to resolve relative volume sources.
+        home: Host home directory used to locate Codex and GitHub configuration.
+        uid: Host user identifier to expose inside the container.
+        gid: Host group identifier to expose inside the container.
+
+    Returns:
+        ContainerRequest: Fully resolved container request ready for Docker execution.
+    """
     active_environ = dict(os.environ if environ is None else environ)
     active_cwd = Path.cwd() if cwd is None else cwd
     active_home = Path.home() if home is None else home
@@ -95,6 +108,18 @@ def run(
     home: Path | None = None,
     runner: DockerRunner | None = None,
 ) -> int:
+    """Run Forge for the provided CLI arguments.
+
+    Args:
+        argv: Optional CLI argument vector.
+        environ: Environment mapping override for tests or embedding.
+        cwd: Working directory override used for relative path resolution.
+        home: Home directory override used for configuration discovery.
+        runner: Optional Docker runner instance to reuse or substitute in tests.
+
+    Returns:
+        int: Process exit status from the container execution.
+    """
     request = parse_cli_args(argv)
     container_request = build_container_request(
         request,
@@ -108,6 +133,14 @@ def run(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run the Forge CLI entrypoint with user-facing error handling.
+
+    Args:
+        argv: Optional CLI argument vector.
+
+    Returns:
+        int: Exit code to return from the process.
+    """
     try:
         return run(argv)
     except BrokenPipeError:

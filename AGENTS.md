@@ -16,7 +16,7 @@ Forge is a Python CLI packaged from `src/forge/`. Keep command-line parsing in `
 
 ## Coding Style & Naming Conventions
 
-Target Python 3.12+ and keep code fully typed. Ruff enforces import ordering and core lint rules; mypy runs in `strict` mode, so avoid untyped defs in `src/forge`. Use 4-space indentation, snake_case for modules/functions, and dataclass names in PascalCase. Keep functions narrow and place CLI-facing errors behind typed exceptions in `errors.py`.
+Target Python 3.12+ and keep code fully typed. Ruff enforces import ordering and core lint rules; mypy runs in `strict` mode, so avoid untyped defs in `src/forge`. Use 4-space indentation, snake_case for modules/functions, and dataclass names in PascalCase. Add Google-style docstrings to every class and function in the repo, including tests; use sections such as `Args`, `Returns`, `Raises`, and `Attributes` when they add signal. Keep functions narrow and place CLI-facing errors behind typed exceptions in `errors.py`.
 
 ## Testing Guidelines
 

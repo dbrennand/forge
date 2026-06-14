@@ -8,12 +8,15 @@ from forge.models import CodexOptions, RunOptions, ShellOptions
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the top-level Forge CLI parser.
+
+    Returns:
+        argparse.ArgumentParser: Configured parser with all subcommands.
+    """
     parser = argparse.ArgumentParser(prog="forge")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    run_parser = _add_run_options(
-        subparsers.add_parser("run", help="Run Codex non-interactively")
-    )
+    run_parser = _add_run_options(subparsers.add_parser("run", help="Run Codex non-interactively"))
     run_parser.add_argument("--yolo", action="store_true", help="Run Codex with --yolo")
     run_parser.add_argument("prompt", help="Prompt passed to codex exec")
 
@@ -28,6 +31,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def parse_cli_args(argv: Sequence[str] | None = None) -> RunOptions | CodexOptions | ShellOptions:
+    """Parse CLI arguments into a typed options object.
+
+    Args:
+        argv: Optional argument vector. When omitted, argparse reads from `sys.argv`.
+
+    Returns:
+        RunOptions | CodexOptions | ShellOptions: Parsed options for the chosen subcommand.
+    """
     namespace = build_parser().parse_args(argv)
     volume_specs = tuple(namespace.volume or [])
 
@@ -57,6 +68,14 @@ def parse_cli_args(argv: Sequence[str] | None = None) -> RunOptions | CodexOptio
 
 
 def _add_run_options(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Attach options shared by the non-interactive `run` command.
+
+    Args:
+        parser: Parser to extend.
+
+    Returns:
+        argparse.ArgumentParser: The same parser for fluent setup.
+    """
     parser.add_argument(
         "--workspace",
         type=Path,
@@ -68,6 +87,14 @@ def _add_run_options(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 
 
 def _add_project_options(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Attach options shared by interactive project commands.
+
+    Args:
+        parser: Parser to extend.
+
+    Returns:
+        argparse.ArgumentParser: The same parser for fluent setup.
+    """
     parser.add_argument(
         "workspace",
         type=Path,
@@ -79,6 +106,11 @@ def _add_project_options(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
 
 
 def _add_shared_options(parser: argparse.ArgumentParser) -> None:
+    """Attach options shared by every Forge subcommand.
+
+    Args:
+        parser: Parser to extend.
+    """
     parser.add_argument("--image", help="Override the runtime image")
     parser.add_argument(
         "--keep-container",

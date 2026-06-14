@@ -4,12 +4,14 @@ from forge.env import collect_forwarded_env, resolve_image
 
 
 def test_resolve_image_precedence() -> None:
+    """Prefer CLI image overrides before env and default values."""
     assert resolve_image("cli:image", {"FORGE_IMAGE": "env:image"}) == "cli:image"
     assert resolve_image(None, {"FORGE_IMAGE": "env:image"}) == "env:image"
     assert resolve_image(None, {}) == "ghcr.io/dbrennand/forge:latest"
 
 
 def test_collect_forwarded_env() -> None:
+    """Forward only whitelisted environment variables with non-empty values."""
     forwarded = collect_forwarded_env(
         {
             "OPENAI_API_KEY": "openai",

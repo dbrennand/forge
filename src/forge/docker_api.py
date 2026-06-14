@@ -36,6 +36,14 @@ FORWARDED_SIGNALS = {
 
 
 def build_container_kwargs(request: ContainerRequest) -> dict[str, Any]:
+    """Translate a container request into Docker SDK keyword arguments.
+
+    Args:
+        request: Fully resolved Forge container request.
+
+    Returns:
+        dict[str, Any]: Keyword arguments accepted by `containers.create`.
+    """
     volumes = {
         str(request.workspace): {"bind": CONTAINER_WORKSPACE, "mode": "rw"},
         str(request.host_codex_dir): {"bind": CONTAINER_CODEX_HOME, "mode": "rw"},
@@ -82,26 +90,63 @@ def build_container_kwargs(request: ContainerRequest) -> dict[str, Any]:
 
 
 def signal_to_docker_name(signum: int) -> str | None:
+    """Map a host signal number to the Docker signal name to forward.
+
+    Args:
+        signum: Numeric host signal.
+
+    Returns:
+        str | None: Docker signal name, or `None` when the signal is not forwarded.
+    """
     return FORWARDED_SIGNALS.get(signal.Signals(signum))
 
 
 @dataclass
 class DockerRunner:
+    """Execute Forge container requests through the Docker SDK.
+
+    Attributes:
+        client: Docker SDK client instance.
+        stdout: Stream used for forwarded container stdout.
+        stderr: Stream used for forwarded container stderr.
+    """
+
     client: Any
     stdout: BinaryIO = sys.stdout.buffer
     stderr: BinaryIO = sys.stderr.buffer
 
     @classmethod
     def from_env(cls) -> DockerRunner:
+        """Create a Docker runner using environment-based Docker discovery.
+
+        Returns:
+            DockerRunner: Runner backed by `docker.from_env()`.
+        """
         return cls(client=docker.from_env())  # type: ignore[attr-defined]
 
     def ping(self) -> None:
+        """Verify that the Docker daemon is reachable.
+
+        Raises:
+            DockerUnavailableError: If the Docker daemon cannot be contacted.
+        """
         try:
             self.client.ping()
         except DockerException as exc:
             raise DockerUnavailableError("Docker daemon is unavailable") from exc
 
     def execute(self, request: ContainerRequest) -> int:
+        """Create, start, and monitor the requested container.
+
+        Args:
+            request: Fully resolved Forge container request.
+
+        Returns:
+            int: Container exit status.
+
+        Raises:
+            ContainerRuntimeError: If Docker fails while creating or running the container.
+        """
         container = None
         started = False
         try:
@@ -121,9 +166,21 @@ class DockerRunner:
                     container.remove(force=True)
 
     def _run_streaming(self, container: Any) -> int:
+        """Stream non-interactive container output until completion.
+
+        Args:
+            container: Docker SDK container object.
+
+        Returns:
+            int: Container exit status.
+
+        Raises:
+            ContainerRuntimeError: If output streaming fails.
+        """
         stream_error: list[BaseException] = []
 
         def _pump() -> None:
+            """Pump attached container output into Forge stdio streams."""
             try:
                 for stdout_chunk, stderr_chunk in container.attach(
                     stream=True,
@@ -150,6 +207,18 @@ class DockerRunner:
         return int(result["StatusCode"])
 
     def _run_interactive(self, container: Any) -> int:
+        """Run an interactive container session attached to the current TTY.
+
+        Args:
+            container: Docker SDK container object.
+
+        Returns:
+            int: Container exit status.
+
+        Raises:
+            ContainerRuntimeError: If the interactive attach disconnects unexpectedly or
+                terminal resize operations fail.
+        """
         socket_attachment = container.attach_socket(
             params={"stdin": 1, "stdout": 1, "stderr": 1, "stream": 1}
         )
@@ -213,6 +282,11 @@ class DockerRunner:
         return self._wait_for_container(container)
 
     def _force_stop(self, container: Any) -> None:
+        """Terminate a still-running interactive container.
+
+        Args:
+            container: Docker SDK container object.
+        """
         container.kill(signal="SIGTERM")
         try:
             container.wait(timeout=INTERACTIVE_TERMINATION_GRACE_SECONDS)
@@ -220,6 +294,15 @@ class DockerRunner:
             container.kill(signal="SIGKILL")
 
     def _resize_terminal(self, container: Any, fd: int) -> None:
+        """Resize the container TTY to match the current host terminal.
+
+        Args:
+            container: Docker SDK container object.
+            fd: File descriptor used to query terminal size.
+
+        Raises:
+            ContainerRuntimeError: If Docker rejects the resize request.
+        """
         size = _terminal_size(fd)
         try:
             container.resize(height=size.lines, width=size.columns)
@@ -227,6 +310,14 @@ class DockerRunner:
             raise ContainerRuntimeError(f"Failed to resize interactive terminal: {exc}") from exc
 
     def _container_exited(self, container: Any) -> bool:
+        """Check whether a container has already exited.
+
+        Args:
+            container: Docker SDK container object.
+
+        Returns:
+            bool: `True` when the container is no longer running.
+        """
         try:
             container.reload()
         except NotFound:
@@ -234,6 +325,14 @@ class DockerRunner:
         return bool(container.status in {"exited", "dead", "removing"})
 
     def _container_running(self, container: Any) -> bool:
+        """Check whether a container is currently running.
+
+        Args:
+            container: Docker SDK container object.
+
+        Returns:
+            bool: `True` when the container status is `running`.
+        """
         try:
             container.reload()
         except NotFound:
@@ -241,6 +340,14 @@ class DockerRunner:
         return bool(container.status == "running")
 
     def _wait_for_container(self, container: Any) -> int:
+        """Wait for a container to exit, tolerating auto-removal races.
+
+        Args:
+            container: Docker SDK container object.
+
+        Returns:
+            int: Container exit status.
+        """
         try:
             result = container.wait()
         except NotFound:
@@ -248,21 +355,43 @@ class DockerRunner:
         return int(result["StatusCode"])
 
     def _cached_exit_code(self, container: Any) -> int:
+        """Read a container exit code from cached attributes.
+
+        Args:
+            container: Docker SDK container object.
+
+        Returns:
+            int: Cached container exit status.
+
+        Raises:
+            ContainerRuntimeError: If no cached exit status is available.
+        """
         exit_code = container.attrs.get("State", {}).get("ExitCode")
         if isinstance(exit_code, int):
             return exit_code
-        raise ContainerRuntimeError(
-            "Container exited before Forge could determine its exit status"
-        )
+        raise ContainerRuntimeError("Container exited before Forge could determine its exit status")
 
 
 class _SignalForwarder:
+    """Temporarily forward host signals to a running Docker container."""
+
     def __init__(self, container: Any, *, on_resize: Callable[[], None] | None = None) -> None:
+        """Initialize a signal forwarder for the provided container.
+
+        Args:
+            container: Docker SDK container object.
+            on_resize: Optional callback invoked for terminal resize signals.
+        """
         self._container = container
         self._on_resize = on_resize
         self._previous_handlers: dict[signal.Signals, Any] = {}
 
     def __enter__(self) -> _SignalForwarder:
+        """Install temporary signal handlers for the managed container.
+
+        Returns:
+            _SignalForwarder: The active context manager instance.
+        """
         for signum in FORWARDED_SIGNALS:
             self._previous_handlers[signum] = signal.getsignal(signum)
             signal.signal(signum, self._handler)
@@ -272,10 +401,23 @@ class _SignalForwarder:
         return self
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        """Restore the previous process signal handlers.
+
+        Args:
+            exc_type: Exception type raised inside the context, if any.
+            exc: Exception instance raised inside the context, if any.
+            tb: Traceback raised inside the context, if any.
+        """
         for signum, previous in self._previous_handlers.items():
             signal.signal(signum, previous)
 
     def _handler(self, signum: int, _frame: object) -> None:
+        """Handle a forwarded host signal.
+
+        Args:
+            signum: Numeric host signal.
+            _frame: Ignored current stack frame from the signal handler API.
+        """
         is_resize_signal = hasattr(signal, "SIGWINCH") and signum == signal.SIGWINCH
         if self._on_resize is not None and is_resize_signal:
             self._on_resize()
@@ -288,6 +430,14 @@ class _SignalForwarder:
 
 
 def _volume_mapping(mounts: tuple[VolumeMount, ...]) -> dict[str, dict[str, str]]:
+    """Convert validated mounts into Docker SDK volume mapping format.
+
+    Args:
+        mounts: Validated extra bind mounts.
+
+    Returns:
+        dict[str, dict[str, str]]: Docker-compatible volume mapping.
+    """
     return {
         str(mount.host_path): {"bind": mount.container_path.as_posix(), "mode": mount.mode}
         for mount in mounts
@@ -295,10 +445,23 @@ def _volume_mapping(mounts: tuple[VolumeMount, ...]) -> dict[str, dict[str, str]
 
 
 def _raw_attached_socket(socket_attachment: Any) -> Any:
+    """Extract the raw socket from a Docker socket wrapper when present.
+
+    Args:
+        socket_attachment: Docker SDK socket wrapper or raw socket object.
+
+    Returns:
+        Any: Raw socket-like object used for I/O.
+    """
     return getattr(socket_attachment, "_sock", socket_attachment)
 
 
 def _close_attached_socket(socket_attachment: Any) -> None:
+    """Close Docker attach resources in an order that preserves buffered responses.
+
+    Args:
+        socket_attachment: Docker SDK socket wrapper or raw socket object.
+    """
     for response_owner in (socket_attachment, _raw_attached_socket(socket_attachment)):
         response = getattr(response_owner, "_response", None)
         if response is None:
@@ -310,6 +473,14 @@ def _close_attached_socket(socket_attachment: Any) -> None:
 
 
 def _terminal_size(fd: int) -> os.terminal_size:
+    """Read terminal size with a stable fallback for non-TTY environments.
+
+    Args:
+        fd: File descriptor used to inspect terminal geometry.
+
+    Returns:
+        os.terminal_size: Terminal size, or an 80x24 fallback when unavailable.
+    """
     try:
         return os.get_terminal_size(fd)
     except OSError:

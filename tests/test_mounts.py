@@ -10,6 +10,7 @@ from forge.mounts import parse_volume_spec, validate_volume_sources, validate_vo
 
 
 def test_parse_volume_spec_default_mode(tmp_path: Path) -> None:
+    """Default volume specs to read-write mode."""
     parsed = parse_volume_spec("./cache:/cache", tmp_path)
 
     assert parsed.host_path == (tmp_path / "cache").resolve()
@@ -18,6 +19,7 @@ def test_parse_volume_spec_default_mode(tmp_path: Path) -> None:
 
 
 def test_parse_volume_spec_ro_mode(tmp_path: Path) -> None:
+    """Preserve an explicit read-only mount mode."""
     parsed = parse_volume_spec("/tmp/cache:/cache:ro", tmp_path)
 
     assert parsed.host_path == Path("/tmp/cache").resolve()
@@ -25,6 +27,7 @@ def test_parse_volume_spec_ro_mode(tmp_path: Path) -> None:
 
 
 def test_parse_volume_spec_normalizes_container_path(tmp_path: Path) -> None:
+    """Normalize container mount paths before storing them."""
     parsed = parse_volume_spec("./cache:/workspace/../cache", tmp_path)
 
     assert parsed.container_path == PurePosixPath("/cache")
@@ -40,11 +43,13 @@ def test_parse_volume_spec_normalizes_container_path(tmp_path: Path) -> None:
     ],
 )
 def test_parse_volume_spec_invalid(spec: str, tmp_path: Path) -> None:
+    """Reject malformed volume specifications."""
     with pytest.raises(ValidationError):
         parse_volume_spec(spec, tmp_path)
 
 
 def test_validate_volume_targets_rejects_reserved_path(tmp_path: Path) -> None:
+    """Reject extra mounts that target reserved container paths."""
     mount = VolumeMount(
         host_path=tmp_path / "cache",
         container_path=PurePosixPath("/workspace"),
@@ -56,6 +61,7 @@ def test_validate_volume_targets_rejects_reserved_path(tmp_path: Path) -> None:
 
 
 def test_validate_volume_targets_rejects_overlapping_extra_targets(tmp_path: Path) -> None:
+    """Reject extra mounts whose target paths overlap each other."""
     mounts = (
         VolumeMount(
             host_path=tmp_path / "cache-a",
@@ -74,6 +80,7 @@ def test_validate_volume_targets_rejects_overlapping_extra_targets(tmp_path: Pat
 
 
 def test_validate_volume_sources_rejects_duplicate_host_path(tmp_path: Path) -> None:
+    """Reject repeated extra mount source paths on the host."""
     shared_host_path = tmp_path / "cache"
     mounts = (
         VolumeMount(
@@ -93,6 +100,7 @@ def test_validate_volume_sources_rejects_duplicate_host_path(tmp_path: Path) -> 
 
 
 def test_validate_volume_sources_rejects_reserved_host_path(tmp_path: Path) -> None:
+    """Reject extra mounts that reuse reserved Forge host paths."""
     reserved_path = tmp_path / "workspace"
     mount = VolumeMount(
         host_path=reserved_path,

@@ -9,6 +9,18 @@ from forge.models import MountMode, VolumeMount
 
 
 def parse_volume_spec(spec: str, cwd: Path) -> VolumeMount:
+    """Parse one CLI volume specification into a validated mount model.
+
+    Args:
+        spec: Raw `HOST:CTR[:ro|rw]` volume specification.
+        cwd: Working directory used to resolve relative host paths.
+
+    Returns:
+        VolumeMount: Parsed bind mount description.
+
+    Raises:
+        ValidationError: If the specification is malformed.
+    """
     if not spec:
         raise ValidationError("Volume spec must not be empty")
 
@@ -45,6 +57,14 @@ def parse_volume_spec(spec: str, cwd: Path) -> VolumeMount:
 
 
 def validate_volume_targets(mounts: tuple[VolumeMount, ...]) -> None:
+    """Ensure extra mount targets do not overlap reserved or duplicate paths.
+
+    Args:
+        mounts: Extra container mounts requested by the user.
+
+    Raises:
+        ValidationError: If any target overlaps another extra mount or a reserved path.
+    """
     checked_mounts: list[VolumeMount] = []
     for mount in mounts:
         for checked_mount in checked_mounts:
@@ -67,6 +87,15 @@ def validate_volume_targets(mounts: tuple[VolumeMount, ...]) -> None:
 def validate_volume_sources(
     mounts: tuple[VolumeMount, ...], *, reserved_host_paths: tuple[Path, ...]
 ) -> None:
+    """Ensure extra mount sources do not duplicate reserved or repeated host paths.
+
+    Args:
+        mounts: Extra container mounts requested by the user.
+        reserved_host_paths: Host paths already used for Forge-managed mounts.
+
+    Raises:
+        ValidationError: If any source path duplicates another source or a reserved path.
+    """
     seen_host_paths: set[Path] = set()
     reserved_sources = set(reserved_host_paths)
 
@@ -81,10 +110,27 @@ def validate_volume_sources(
 
 
 def _paths_overlap(left: PurePosixPath, right: PurePosixPath) -> bool:
+    """Report whether two container paths overlap by ancestry or equality.
+
+    Args:
+        left: First container path.
+        right: Second container path.
+
+    Returns:
+        bool: `True` when either path contains the other.
+    """
     return left == right or left in right.parents or right in left.parents
 
 
 def _normalize_container_path(raw_path: str) -> PurePosixPath:
+    """Normalize a raw container path without touching the host filesystem.
+
+    Args:
+        raw_path: Raw container path from the CLI.
+
+    Returns:
+        PurePosixPath: Normalized absolute container path.
+    """
     segments: list[str] = []
     for segment in raw_path.split("/"):
         if segment in {"", "."}:
