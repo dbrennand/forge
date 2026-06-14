@@ -16,12 +16,7 @@ fi
 current_uid="$(id -u "${forge_user}")"
 current_gid="$(id -g "${forge_user}")"
 
-if existing_group="$(getent group "${FORGE_HOST_GID}" | cut -d: -f1)"; then
-  if [[ "${existing_group}" != "${forge_user}" ]]; then
-    echo "Requested GID ${FORGE_HOST_GID} is already assigned to group ${existing_group}." >&2
-    exit 2
-  fi
-fi
+existing_group="$(getent group "${FORGE_HOST_GID}" | cut -d: -f1 || true)"
 
 if existing_user="$(getent passwd "${FORGE_HOST_UID}" | cut -d: -f1)"; then
   if [[ "${existing_user}" != "${forge_user}" ]]; then
@@ -30,8 +25,11 @@ if existing_user="$(getent passwd "${FORGE_HOST_UID}" | cut -d: -f1)"; then
   fi
 fi
 
-if [[ "${current_gid}" != "${FORGE_HOST_GID}" ]]; then
+if [[ -n "${existing_group}" && "${existing_group}" != "${forge_user}" ]]; then
+  usermod --gid "${FORGE_HOST_GID}" "${forge_user}"
+elif [[ "${current_gid}" != "${FORGE_HOST_GID}" ]]; then
   groupmod --gid "${FORGE_HOST_GID}" "${forge_user}"
+  usermod --gid "${FORGE_HOST_GID}" "${forge_user}"
 fi
 
 if [[ "${current_uid}" != "${FORGE_HOST_UID}" ]]; then

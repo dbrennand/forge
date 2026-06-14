@@ -5,6 +5,10 @@ ARG GH_VERSION=2.93.0
 ARG TARGETARCH
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV HOME=/home/forge
+ENV XDG_CONFIG_HOME=/home/forge/.config
+ENV CODEX_HOME=/home/forge/.codex
+ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
