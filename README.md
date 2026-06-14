@@ -37,6 +37,7 @@ The default runtime image is `ghcr.io/dbrennand/forge:latest`. It contains pinne
 
 - Codex CLI `0.137.0`
 - GitHub CLI `2.93.0`
+- Debian `bubblewrap` so Codex can use the host-provided sandbox helper instead of its bundled fallback
 
 ## Development
 

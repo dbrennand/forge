@@ -17,7 +17,7 @@ docker run --rm \
   --volume "${tmp_dir}/codex:/home/forge/.codex" \
   --volume "${tmp_dir}/gh:/home/forge/.config/gh:ro" \
   "${image}" \
-  /bin/bash -lc 'test "$(id -un)" = "forge" && test "$HOME" = "/home/forge" && test "$CODEX_HOME" = "/home/forge/.codex" && touch /workspace/smoke-owned'
+  /bin/bash -lc 'test "$(id -un)" = "forge" && test "$HOME" = "/home/forge" && test "$CODEX_HOME" = "/home/forge/.codex" && command -v bwrap >/dev/null && touch /workspace/smoke-owned'
 
 if [[ "$(uname -s)" == "Linux" ]]; then
   owner="$(stat -c '%u:%g' "${tmp_dir}/workspace/smoke-owned")"
