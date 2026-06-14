@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, BinaryIO
 
 import docker
-from docker.errors import DockerException
+from docker.errors import DockerException, NotFound
 
 from forge.config import (
     CONTAINER_CODEX_HOME,
@@ -139,10 +139,10 @@ class DockerRunner:
         return int(result["StatusCode"])
 
     def _run_interactive(self, container: Any) -> int:
-        socket_wrapper = container.attach_socket(
+        socket_attachment = container.attach_socket(
             params={"stdin": 1, "stdout": 1, "stderr": 1, "stream": 1}
         )
-        attached_socket = socket_wrapper._sock
+        attached_socket = _raw_attached_socket(socket_attachment)
         attached_socket.setblocking(False)
 
         stdin_fd = sys.stdin.fileno()
@@ -193,10 +193,9 @@ class DockerRunner:
             finally:
                 selector.close()
                 termios.tcsetattr(stdin_fd, termios.TCSADRAIN, previous_termios)
-                socket_wrapper.close()
+                _close_attached_socket(socket_attachment)
 
-        result = container.wait()
-        return int(result["StatusCode"])
+        return self._wait_for_container(container)
 
     def _force_stop(self, container: Any) -> None:
         container.kill(signal="SIGTERM")
@@ -206,12 +205,33 @@ class DockerRunner:
             container.kill(signal="SIGKILL")
 
     def _container_exited(self, container: Any) -> bool:
-        container.reload()
+        try:
+            container.reload()
+        except NotFound:
+            return True
         return bool(container.status in {"exited", "dead", "removing"})
 
     def _container_running(self, container: Any) -> bool:
-        container.reload()
+        try:
+            container.reload()
+        except NotFound:
+            return False
         return bool(container.status == "running")
+
+    def _wait_for_container(self, container: Any) -> int:
+        try:
+            result = container.wait()
+        except NotFound:
+            return self._cached_exit_code(container)
+        return int(result["StatusCode"])
+
+    def _cached_exit_code(self, container: Any) -> int:
+        exit_code = container.attrs.get("State", {}).get("ExitCode")
+        if isinstance(exit_code, int):
+            return exit_code
+        raise ContainerRuntimeError(
+            "Container exited before Forge could determine its exit status"
+        )
 
 
 class _SignalForwarder:
@@ -242,3 +262,18 @@ def _volume_mapping(mounts: tuple[VolumeMount, ...]) -> dict[str, dict[str, str]
         str(mount.host_path): {"bind": mount.container_path.as_posix(), "mode": mount.mode}
         for mount in mounts
     }
+
+
+def _raw_attached_socket(socket_attachment: Any) -> Any:
+    return getattr(socket_attachment, "_sock", socket_attachment)
+
+
+def _close_attached_socket(socket_attachment: Any) -> None:
+    for response_owner in (socket_attachment, _raw_attached_socket(socket_attachment)):
+        response = getattr(response_owner, "_response", None)
+        if response is None:
+            continue
+        response.close()
+        with suppress(AttributeError):
+            del response_owner._response
+    socket_attachment.close()

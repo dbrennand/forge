@@ -2,8 +2,19 @@ from __future__ import annotations
 
 import signal
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 
-from forge.docker_api import build_container_kwargs, signal_to_docker_name
+import pytest
+from docker.errors import NotFound
+
+from forge.docker_api import (
+    DockerRunner,
+    _close_attached_socket,
+    _raw_attached_socket,
+    build_container_kwargs,
+    signal_to_docker_name,
+)
+from forge.errors import ContainerRuntimeError
 from forge.models import ContainerRequest, VolumeMount
 
 
@@ -61,3 +72,99 @@ def test_signal_to_docker_name() -> None:
     assert signal_to_docker_name(signal.SIGINT) == "SIGINT"
     assert signal_to_docker_name(signal.SIGTERM) == "SIGTERM"
     assert signal_to_docker_name(signal.SIGHUP) == "SIGHUP"
+
+
+def test_raw_attached_socket_uses_underlying_socket() -> None:
+    raw_socket = object()
+    attachment = SimpleNamespace(_sock=raw_socket)
+
+    assert _raw_attached_socket(attachment) is raw_socket
+
+
+def test_raw_attached_socket_accepts_socket_without_wrapper() -> None:
+    raw_socket = object()
+
+    assert _raw_attached_socket(raw_socket) is raw_socket
+
+
+def test_close_attached_socket_closes_wrapper_response_before_attachment() -> None:
+    events: list[str] = []
+
+    class FakeAttachment:
+        def __init__(self) -> None:
+            self.closed = False
+            self._sock = SimpleNamespace()
+            self._response: object | None = None
+
+        def close(self) -> None:
+            self.closed = True
+            events.append("attachment.close")
+
+    attachment = FakeAttachment()
+
+    class FakeResponse:
+        def close(self) -> None:
+            if attachment.closed:
+                raise AssertionError("response closed after attachment")
+            events.append("response.close")
+
+    attachment._response = FakeResponse()
+
+    _close_attached_socket(attachment)
+
+    assert events == ["response.close", "attachment.close"]
+    assert not hasattr(attachment, "_response")
+    assert not hasattr(attachment._sock, "_response")
+
+
+def test_close_attached_socket_closes_raw_socket_response_before_attachment() -> None:
+    events: list[str] = []
+
+    class FakeAttachment:
+        def __init__(self) -> None:
+            self.closed = False
+            self._sock = SimpleNamespace()
+
+        def close(self) -> None:
+            self.closed = True
+            events.append("attachment.close")
+
+    attachment = FakeAttachment()
+
+    class FakeResponse:
+        def close(self) -> None:
+            if attachment.closed:
+                raise AssertionError("response closed after attachment")
+            events.append("response.close")
+
+    attachment._sock._response = FakeResponse()
+
+    _close_attached_socket(attachment)
+
+    assert events == ["response.close", "attachment.close"]
+    assert not hasattr(attachment._sock, "_response")
+
+
+def test_wait_for_container_uses_cached_exit_code_after_auto_remove() -> None:
+    runner = DockerRunner(client=object())
+
+    class FakeContainer:
+        attrs: dict[str, dict[str, int]] = {"State": {"ExitCode": 0}}
+
+        def wait(self) -> object:
+            raise NotFound("missing")
+
+    assert runner._wait_for_container(FakeContainer()) == 0
+
+
+def test_wait_for_container_requires_cached_exit_code_when_missing() -> None:
+    runner = DockerRunner(client=object())
+
+    class FakeContainer:
+        attrs: dict[str, dict[str, int]] = {"State": {}}
+
+        def wait(self) -> object:
+            raise NotFound("missing")
+
+    with pytest.raises(ContainerRuntimeError):
+        runner._wait_for_container(FakeContainer())
