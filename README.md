@@ -49,6 +49,14 @@ uv run pytest
 bash scripts/smoke_runtime.sh forge:test
 ```
 
+`uv run pytest` prints a terminal coverage summary by default. For an HTML report, run:
+
+```bash
+uv run pytest --cov-report=html
+```
+
+In GitHub Actions, the CI workflow also appends the coverage table to the job summary.
+
 ## Release
 
 Create a version tag that matches `pyproject.toml`, for example `v0.1.0`. The release workflow publishes:

@@ -23,6 +23,7 @@ forge = "forge.cli:main"
 dev = [
   "mypy>=1.18.0,<2.0.0",
   "pytest>=8.4.0,<9.0.0",
+  "pytest-cov>=6.0.0,<7.0.0",
   "ruff>=0.12.0,<0.13.0",
 ]
 
@@ -30,8 +31,16 @@ dev = [
 packages = ["src/forge"]
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = "-ra --cov=forge --cov-report=term-missing"
 testpaths = ["tests"]
+required_plugins = ["pytest-cov"]
+
+[tool.coverage.run]
+branch = true
+source = ["forge"]
+
+[tool.coverage.report]
+show_missing = true
 
 [tool.ruff]
 line-length = 100
