@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Remap the in-image forge account to the invoking host UID:GID, then drop privileges.
 
 set -euo pipefail
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Smoke-test the runtime image by verifying forge user setup, environment, and workspace ownership.
 
 set -euo pipefail
 
