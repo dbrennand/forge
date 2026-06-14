@@ -10,7 +10,7 @@ def build_shell_command() -> tuple[str, ...]:
 def build_codex_command(*, yolo: bool, skip_git_repo_check: bool) -> tuple[str, ...]:
     command = ["codex", "--cd", CONTAINER_WORKSPACE]
     if yolo:
-        command.append("--yolo")
+        command.append("--dangerously-bypass-approvals-and-sandbox")
     else:
         command.extend(["--sandbox", "workspace-write", "--ask-for-approval", "on-request"])
     if skip_git_repo_check:
@@ -21,9 +21,9 @@ def build_codex_command(*, yolo: bool, skip_git_repo_check: bool) -> tuple[str, 
 def build_run_command(prompt: str, *, yolo: bool, skip_git_repo_check: bool) -> tuple[str, ...]:
     command = ["codex", "exec", "--cd", CONTAINER_WORKSPACE]
     if yolo:
-        command.append("--yolo")
+        command.append("--dangerously-bypass-approvals-and-sandbox")
     else:
-        command.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+        command.extend(["--sandbox", "workspace-write"])
     if skip_git_repo_check:
         command.append("--skip-git-repo-check")
     command.extend(["--ephemeral", prompt])

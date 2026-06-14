@@ -48,8 +48,6 @@ def test_build_container_request_for_run(tmp_path: Path, home: Path) -> None:
         "/workspace",
         "--sandbox",
         "workspace-write",
-        "--ask-for-approval",
-        "never",
         "--skip-git-repo-check",
         "--ephemeral",
         "do work",
@@ -73,7 +71,12 @@ def test_build_container_request_for_git_workspace(tmp_path: Path, home: Path) -
 
     container_request = build_container_request(request, cwd=tmp_path, home=home, uid=501, gid=20)
 
-    assert container_request.command == ("codex", "--cd", "/workspace", "--yolo")
+    assert container_request.command == (
+        "codex",
+        "--cd",
+        "/workspace",
+        "--dangerously-bypass-approvals-and-sandbox",
+    )
     assert container_request.keep_container is True
     assert container_request.interactive is True
 

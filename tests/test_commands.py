@@ -24,7 +24,7 @@ def test_build_codex_command_yolo_and_skip_git() -> None:
         "codex",
         "--cd",
         "/workspace",
-        "--yolo",
+        "--dangerously-bypass-approvals-and-sandbox",
         "--skip-git-repo-check",
     )
 
@@ -37,8 +37,6 @@ def test_build_run_command_default() -> None:
         "/workspace",
         "--sandbox",
         "workspace-write",
-        "--ask-for-approval",
-        "never",
         "--ephemeral",
         "fix it",
     )
@@ -50,7 +48,7 @@ def test_build_run_command_yolo_and_skip_git() -> None:
         "exec",
         "--cd",
         "/workspace",
-        "--yolo",
+        "--dangerously-bypass-approvals-and-sandbox",
         "--skip-git-repo-check",
         "--ephemeral",
         "fix it",
