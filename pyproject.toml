@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "forge"
+version = "0.1.0"
+description = "Launch Codex and a shell inside a prepared Docker runtime."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "GPL-3.0-only"
+authors = [
+  { name = "dbrennand" },
+]
+dependencies = [
+  "docker>=7.1.0,<8.0.0",
+]
+
+[project.scripts]
+forge = "forge.cli:main"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.18.0,<2.0.0",
+  "pytest>=8.4.0,<9.0.0",
+  "ruff>=0.12.0,<0.13.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/forge"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "UP",
+  "B",
+  "SIM",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["forge"]
+warn_unused_configs = true
+
