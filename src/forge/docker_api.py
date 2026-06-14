@@ -82,7 +82,7 @@ class DockerRunner:
 
     @classmethod
     def from_env(cls) -> DockerRunner:
-        return cls(client=docker.from_env())
+        return cls(client=docker.from_env())  # type: ignore[attr-defined]
 
     def ping(self) -> None:
         try:
