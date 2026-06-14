@@ -35,16 +35,25 @@ def parse_volume_spec(spec: str, cwd: Path) -> VolumeMount:
 
     host_path = Path(host_segment).expanduser()
     host_path = (cwd / host_path).resolve() if not host_path.is_absolute() else host_path.resolve()
+    container_path = _normalize_container_path(container_segment)
 
     return VolumeMount(
         host_path=host_path,
-        container_path=PurePosixPath(container_segment),
+        container_path=container_path,
         mode=mode,
     )
 
 
 def validate_volume_targets(mounts: tuple[VolumeMount, ...]) -> None:
+    checked_mounts: list[VolumeMount] = []
     for mount in mounts:
+        for checked_mount in checked_mounts:
+            if _paths_overlap(mount.container_path, checked_mount.container_path):
+                raise ValidationError(
+                    "Extra volume target "
+                    f"{mount.container_path.as_posix()} overlaps extra volume target "
+                    f"{checked_mount.container_path.as_posix()}"
+                )
         for reserved in RESERVED_MOUNT_PATHS:
             if _paths_overlap(mount.container_path, reserved):
                 raise ValidationError(
@@ -52,7 +61,40 @@ def validate_volume_targets(mounts: tuple[VolumeMount, ...]) -> None:
                     f"{mount.container_path.as_posix()} overlaps reserved path "
                     f"{reserved.as_posix()}"
                 )
+        checked_mounts.append(mount)
+
+
+def validate_volume_sources(
+    mounts: tuple[VolumeMount, ...], *, reserved_host_paths: tuple[Path, ...]
+) -> None:
+    seen_host_paths: set[Path] = set()
+    reserved_sources = set(reserved_host_paths)
+
+    for mount in mounts:
+        if mount.host_path in seen_host_paths:
+            raise ValidationError(f"Duplicate host volume source: {mount.host_path}")
+        if mount.host_path in reserved_sources:
+            raise ValidationError(
+                f"Extra volume source {mount.host_path} overlaps a reserved host path"
+            )
+        seen_host_paths.add(mount.host_path)
 
 
 def _paths_overlap(left: PurePosixPath, right: PurePosixPath) -> bool:
     return left == right or left in right.parents or right in left.parents
+
+
+def _normalize_container_path(raw_path: str) -> PurePosixPath:
+    segments: list[str] = []
+    for segment in raw_path.split("/"):
+        if segment in {"", "."}:
+            continue
+        if segment == "..":
+            if segments:
+                segments.pop()
+            continue
+        segments.append(segment)
+
+    if not segments:
+        return PurePosixPath("/")
+    return PurePosixPath("/", *segments)

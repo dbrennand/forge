@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from forge.cli import build_container_request
+from forge.errors import ValidationError
 from forge.models import CodexOptions, RunOptions, ShellOptions
 
 
@@ -90,3 +91,39 @@ def test_build_container_request_for_shell(tmp_path: Path, home: Path) -> None:
     container_request = build_container_request(request, cwd=tmp_path, home=home, uid=501, gid=20)
 
     assert container_request.command == ("/bin/bash",)
+
+
+def test_build_container_request_rejects_reserved_volume_target_bypass(
+    tmp_path: Path, home: Path
+) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    request = RunOptions(
+        workspace=workspace,
+        image=None,
+        keep_container=False,
+        volume_specs=("./cache:/workspace/../home/forge/.codex",),
+        yolo=False,
+        prompt="do work",
+    )
+
+    with pytest.raises(ValidationError):
+        build_container_request(request, cwd=tmp_path, home=home, uid=501, gid=20)
+
+
+def test_build_container_request_rejects_reserved_host_volume_source(
+    tmp_path: Path, home: Path
+) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    request = RunOptions(
+        workspace=workspace,
+        image=None,
+        keep_container=False,
+        volume_specs=(f"{workspace}:/cache",),
+        yolo=False,
+        prompt="do work",
+    )
+
+    with pytest.raises(ValidationError):
+        build_container_request(request, cwd=tmp_path, home=home, uid=501, gid=20)

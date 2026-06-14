@@ -36,7 +36,10 @@ def detect_git_repository(workspace: Path) -> bool:
     if not dot_git.is_file():
         return False
 
-    content = dot_git.read_text(encoding="utf-8").strip()
+    try:
+        content = dot_git.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return False
     prefix = "gitdir:"
     if not content.startswith(prefix):
         return False
@@ -47,7 +50,7 @@ def detect_git_repository(workspace: Path) -> bool:
     git_dir = Path(pointer)
     if not git_dir.is_absolute():
         git_dir = (workspace / git_dir).resolve()
-    return git_dir.exists()
+    return git_dir.is_dir()
 
 
 def validate_host_identity(uid: int, gid: int) -> None:

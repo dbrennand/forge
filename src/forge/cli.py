@@ -11,7 +11,7 @@ from forge.docker_api import DockerRunner
 from forge.env import collect_forwarded_env, resolve_image
 from forge.errors import ForgeError
 from forge.models import CodexOptions, ContainerRequest, RunOptions, ShellOptions
-from forge.mounts import parse_volume_spec, validate_volume_targets
+from forge.mounts import parse_volume_spec, validate_volume_sources, validate_volume_targets
 from forge.validation import (
     detect_git_repository,
     resolve_workspace,
@@ -43,6 +43,10 @@ def build_container_request(
     image = resolve_image(request.image, active_environ)
     extra_mounts = tuple(parse_volume_spec(spec, active_cwd) for spec in request.volume_specs)
     validate_volume_targets(extra_mounts)
+    validate_volume_sources(
+        extra_mounts,
+        reserved_host_paths=(workspace, host_codex_dir, host_gh_config_dir),
+    )
     skip_git_repo_check = not detect_git_repository(workspace)
     forwarded_env = collect_forwarded_env(active_environ)
 

@@ -72,6 +72,24 @@ def test_detect_git_repository_worktree_file(tmp_path: Path) -> None:
     assert detect_git_repository(workspace) is True
 
 
+def test_detect_git_repository_worktree_file_requires_directory(tmp_path: Path) -> None:
+    gitdir = tmp_path / "worktree-git"
+    gitdir.write_text("not a directory", encoding="utf-8")
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
+
+    assert detect_git_repository(workspace) is False
+
+
+def test_detect_git_repository_invalid_git_file_encoding(tmp_path: Path) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / ".git").write_bytes(b"\xff")
+
+    assert detect_git_repository(workspace) is False
+
+
 def test_detect_git_repository_invalid_git_file(tmp_path: Path) -> None:
     workspace = tmp_path / "repo"
     workspace.mkdir()

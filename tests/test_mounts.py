@@ -6,7 +6,7 @@ import pytest
 
 from forge.errors import ValidationError
 from forge.models import VolumeMount
-from forge.mounts import parse_volume_spec, validate_volume_targets
+from forge.mounts import parse_volume_spec, validate_volume_sources, validate_volume_targets
 
 
 def test_parse_volume_spec_default_mode(tmp_path: Path) -> None:
@@ -22,6 +22,12 @@ def test_parse_volume_spec_ro_mode(tmp_path: Path) -> None:
 
     assert parsed.host_path == Path("/tmp/cache").resolve()
     assert parsed.mode == "ro"
+
+
+def test_parse_volume_spec_normalizes_container_path(tmp_path: Path) -> None:
+    parsed = parse_volume_spec("./cache:/workspace/../cache", tmp_path)
+
+    assert parsed.container_path == PurePosixPath("/cache")
 
 
 @pytest.mark.parametrize(
@@ -47,3 +53,52 @@ def test_validate_volume_targets_rejects_reserved_path(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError):
         validate_volume_targets((mount,))
+
+
+def test_validate_volume_targets_rejects_overlapping_extra_targets(tmp_path: Path) -> None:
+    mounts = (
+        VolumeMount(
+            host_path=tmp_path / "cache-a",
+            container_path=PurePosixPath("/cache"),
+            mode="rw",
+        ),
+        VolumeMount(
+            host_path=tmp_path / "cache-b",
+            container_path=PurePosixPath("/cache/subdir"),
+            mode="rw",
+        ),
+    )
+
+    with pytest.raises(ValidationError):
+        validate_volume_targets(mounts)
+
+
+def test_validate_volume_sources_rejects_duplicate_host_path(tmp_path: Path) -> None:
+    shared_host_path = tmp_path / "cache"
+    mounts = (
+        VolumeMount(
+            host_path=shared_host_path,
+            container_path=PurePosixPath("/cache-a"),
+            mode="rw",
+        ),
+        VolumeMount(
+            host_path=shared_host_path,
+            container_path=PurePosixPath("/cache-b"),
+            mode="ro",
+        ),
+    )
+
+    with pytest.raises(ValidationError):
+        validate_volume_sources(mounts, reserved_host_paths=())
+
+
+def test_validate_volume_sources_rejects_reserved_host_path(tmp_path: Path) -> None:
+    reserved_path = tmp_path / "workspace"
+    mount = VolumeMount(
+        host_path=reserved_path,
+        container_path=PurePosixPath("/cache"),
+        mode="rw",
+    )
+
+    with pytest.raises(ValidationError):
+        validate_volume_sources((mount,), reserved_host_paths=(reserved_path,))
