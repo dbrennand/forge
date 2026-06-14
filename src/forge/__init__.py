@@ -1,6 +1,8 @@
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 
 __all__ = ["__version__"]
 
-__version__ = version("forge")
-
+try:
+    __version__ = version("forge")
+except PackageNotFoundError:
+    __version__ = "0.0.0"

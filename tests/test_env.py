@@ -1,0 +1,25 @@
+from __future__ import annotations
+
+from forge.env import collect_forwarded_env, resolve_image
+
+
+def test_resolve_image_precedence() -> None:
+    assert resolve_image("cli:image", {"FORGE_IMAGE": "env:image"}) == "cli:image"
+    assert resolve_image(None, {"FORGE_IMAGE": "env:image"}) == "env:image"
+    assert resolve_image(None, {}) == "ghcr.io/dbrennand/forge:latest"
+
+
+def test_collect_forwarded_env() -> None:
+    forwarded = collect_forwarded_env(
+        {
+            "OPENAI_API_KEY": "openai",
+            "GITHUB_TOKEN": "github",
+            "GH_TOKEN": "",
+            "EXTRA": "ignored",
+        }
+    )
+
+    assert forwarded == {
+        "OPENAI_API_KEY": "openai",
+        "GITHUB_TOKEN": "github",
+    }

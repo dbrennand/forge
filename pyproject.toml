@@ -51,6 +51,10 @@ select = [
 [tool.mypy]
 python_version = "3.12"
 strict = true
-packages = ["forge"]
+files = ["src", "tests"]
+mypy_path = ["src"]
 warn_unused_configs = true
 
+[[tool.mypy.overrides]]
+module = ["docker", "docker.*"]
+ignore_missing_imports = true
