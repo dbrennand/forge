@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import signal
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
@@ -11,6 +12,8 @@ from forge.docker_api import (
     DockerRunner,
     _close_attached_socket,
     _raw_attached_socket,
+    _SignalForwarder,
+    _terminal_size,
     build_container_kwargs,
     signal_to_docker_name,
 )
@@ -23,6 +26,8 @@ def make_request(tmp_path: Path, *, keep_container: bool = False) -> ContainerRe
     workspace.mkdir()
     codex = tmp_path / ".codex"
     codex.mkdir()
+    config = tmp_path / "config.toml"
+    config.write_text('model = "gpt-5.5"\n', encoding="utf-8")
     gh = tmp_path / ".config" / "gh"
     gh.mkdir(parents=True)
     return ContainerRequest(
@@ -41,9 +46,11 @@ def make_request(tmp_path: Path, *, keep_container: bool = False) -> ContainerRe
         command=("codex", "exec"),
         interactive=False,
         host_codex_dir=codex,
+        host_codex_config_file=config,
         host_gh_config_dir=gh,
         host_uid=501,
         host_gid=20,
+        nested_sandbox=True,
     )
 
 
@@ -58,8 +65,13 @@ def test_build_container_kwargs(tmp_path: Path) -> None:
     assert kwargs["environment"]["FORGE_HOST_UID"] == "501"
     assert kwargs["volumes"][str(request.workspace)]["bind"] == "/workspace"
     assert kwargs["volumes"][str(request.host_codex_dir)]["bind"] == "/home/forge/.codex"
+    assert (
+        kwargs["volumes"][str(request.host_codex_config_file)]["bind"]
+        == "/home/forge/.codex/config.toml"
+    )
     assert kwargs["volumes"][str(request.host_gh_config_dir)]["mode"] == "ro"
     assert kwargs["labels"]["io.dbrennand.forge.command"] == "run"
+    assert kwargs["security_opt"] == ["seccomp=unconfined", "apparmor=unconfined"]
 
 
 def test_build_container_kwargs_keep_container(tmp_path: Path) -> None:
@@ -68,10 +80,100 @@ def test_build_container_kwargs_keep_container(tmp_path: Path) -> None:
     assert kwargs["auto_remove"] is False
 
 
+def test_build_container_kwargs_sets_interactive_term_fallback(tmp_path: Path) -> None:
+    request = make_request(tmp_path)
+    request = ContainerRequest(
+        command_name=request.command_name,
+        image=request.image,
+        workspace=request.workspace,
+        keep_container=request.keep_container,
+        extra_mounts=request.extra_mounts,
+        forwarded_env={},
+        command=request.command,
+        interactive=True,
+        host_codex_dir=request.host_codex_dir,
+        host_codex_config_file=request.host_codex_config_file,
+        host_gh_config_dir=request.host_gh_config_dir,
+        host_uid=request.host_uid,
+        host_gid=request.host_gid,
+        nested_sandbox=request.nested_sandbox,
+    )
+
+    kwargs = build_container_kwargs(request)
+
+    assert kwargs["environment"]["TERM"] == "xterm-256color"
+
+
+def test_build_container_kwargs_omits_nested_sandbox_settings(tmp_path: Path) -> None:
+    request = make_request(tmp_path)
+    request = ContainerRequest(
+        command_name=request.command_name,
+        image=request.image,
+        workspace=request.workspace,
+        keep_container=request.keep_container,
+        extra_mounts=request.extra_mounts,
+        forwarded_env=request.forwarded_env,
+        command=request.command,
+        interactive=request.interactive,
+        host_codex_dir=request.host_codex_dir,
+        host_codex_config_file=None,
+        host_gh_config_dir=request.host_gh_config_dir,
+        host_uid=request.host_uid,
+        host_gid=request.host_gid,
+        nested_sandbox=False,
+    )
+
+    kwargs = build_container_kwargs(request)
+
+    assert "security_opt" not in kwargs
+
+
 def test_signal_to_docker_name() -> None:
     assert signal_to_docker_name(signal.SIGINT) == "SIGINT"
     assert signal_to_docker_name(signal.SIGTERM) == "SIGTERM"
     assert signal_to_docker_name(signal.SIGHUP) == "SIGHUP"
+
+
+def test_resize_terminal_uses_current_terminal_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = DockerRunner(client=object())
+    observed: list[tuple[int, int]] = []
+
+    class FakeContainer:
+        def resize(self, height: int, width: int) -> None:
+            observed.append((height, width))
+
+    monkeypatch.setattr(
+        "forge.docker_api.os.get_terminal_size",
+        lambda fd: os.terminal_size((132, 43)),
+    )
+
+    runner._resize_terminal(FakeContainer(), 1)
+
+    assert observed == [(43, 132)]
+
+
+def test_terminal_size_uses_fallback_when_fd_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_os_error(fd: int) -> os.terminal_size:
+        raise OSError("no tty")
+
+    monkeypatch.setattr("forge.docker_api.os.get_terminal_size", raise_os_error)
+
+    assert _terminal_size(1) == os.terminal_size((80, 24))
+
+
+def test_signal_forwarder_uses_resize_callback_for_sigwinch() -> None:
+    if not hasattr(signal, "SIGWINCH"):
+        pytest.skip("SIGWINCH is not available on this platform")
+
+    container = SimpleNamespace(kill=lambda signal: None)
+    calls: list[str] = []
+    forwarder = _SignalForwarder(container, on_resize=lambda: calls.append("resize"))
+
+    forwarder._handler(signal.SIGWINCH, None)
+
+    assert calls == ["resize"]
 
 
 def test_raw_attached_socket_uses_underlying_socket() -> None:

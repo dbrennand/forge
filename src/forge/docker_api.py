@@ -8,6 +8,7 @@ import sys
 import termios
 import threading
 import tty
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, BinaryIO
@@ -40,6 +41,11 @@ def build_container_kwargs(request: ContainerRequest) -> dict[str, Any]:
         str(request.host_codex_dir): {"bind": CONTAINER_CODEX_HOME, "mode": "rw"},
         str(request.host_gh_config_dir): {"bind": CONTAINER_GH_CONFIG, "mode": "ro"},
     }
+    if request.host_codex_config_file is not None:
+        volumes[str(request.host_codex_config_file)] = {
+            "bind": f"{CONTAINER_CODEX_HOME}/config.toml",
+            "mode": "ro",
+        }
     volumes.update(_volume_mapping(request.extra_mounts))
 
     environment = {
@@ -51,11 +57,13 @@ def build_container_kwargs(request: ContainerRequest) -> dict[str, Any]:
         "FORGE_HOST_GID": str(request.host_gid),
         **request.forwarded_env,
     }
+    if request.interactive and environment.get("TERM") in {None, "", "dumb"}:
+        environment["TERM"] = "xterm-256color"
 
     labels = dict(CONTAINER_LABELS)
     labels["io.dbrennand.forge.command"] = request.command_name
 
-    return {
+    kwargs = {
         "image": request.image,
         "command": list(request.command),
         "detach": True,
@@ -68,6 +76,9 @@ def build_container_kwargs(request: ContainerRequest) -> dict[str, Any]:
         "labels": labels,
         "user": "0:0",
     }
+    if request.nested_sandbox:
+        kwargs["security_opt"] = ["seccomp=unconfined", "apparmor=unconfined"]
+    return kwargs
 
 
 def signal_to_docker_name(signum: int) -> str | None:
@@ -147,13 +158,17 @@ class DockerRunner:
 
         stdin_fd = sys.stdin.fileno()
         stdout_fd = sys.stdout.fileno()
+        self._resize_terminal(container, stdout_fd)
         selector = selectors.DefaultSelector()
         selector.register(attached_socket, selectors.EVENT_READ, "socket")
         selector.register(stdin_fd, selectors.EVENT_READ, "stdin")
         previous_termios = termios.tcgetattr(stdin_fd)
         tty.setraw(stdin_fd)
 
-        with _SignalForwarder(container):
+        with _SignalForwarder(
+            container,
+            on_resize=lambda: self._resize_terminal(container, stdout_fd),
+        ):
             try:
                 while True:
                     if self._container_exited(container):
@@ -204,6 +219,13 @@ class DockerRunner:
         except DockerException:
             container.kill(signal="SIGKILL")
 
+    def _resize_terminal(self, container: Any, fd: int) -> None:
+        size = _terminal_size(fd)
+        try:
+            container.resize(height=size.lines, width=size.columns)
+        except DockerException as exc:
+            raise ContainerRuntimeError(f"Failed to resize interactive terminal: {exc}") from exc
+
     def _container_exited(self, container: Any) -> bool:
         try:
             container.reload()
@@ -235,14 +257,18 @@ class DockerRunner:
 
 
 class _SignalForwarder:
-    def __init__(self, container: Any) -> None:
+    def __init__(self, container: Any, *, on_resize: Callable[[], None] | None = None) -> None:
         self._container = container
+        self._on_resize = on_resize
         self._previous_handlers: dict[signal.Signals, Any] = {}
 
     def __enter__(self) -> _SignalForwarder:
         for signum in FORWARDED_SIGNALS:
             self._previous_handlers[signum] = signal.getsignal(signum)
             signal.signal(signum, self._handler)
+        if hasattr(signal, "SIGWINCH") and self._on_resize is not None:
+            self._previous_handlers[signal.SIGWINCH] = signal.getsignal(signal.SIGWINCH)
+            signal.signal(signal.SIGWINCH, self._handler)
         return self
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
@@ -250,6 +276,10 @@ class _SignalForwarder:
             signal.signal(signum, previous)
 
     def _handler(self, signum: int, _frame: object) -> None:
+        is_resize_signal = hasattr(signal, "SIGWINCH") and signum == signal.SIGWINCH
+        if self._on_resize is not None and is_resize_signal:
+            self._on_resize()
+            return
         docker_signal = signal_to_docker_name(signum)
         if docker_signal is None:
             return
@@ -277,3 +307,10 @@ def _close_attached_socket(socket_attachment: Any) -> None:
         with suppress(AttributeError):
             del response_owner._response
     socket_attachment.close()
+
+
+def _terminal_size(fd: int) -> os.terminal_size:
+    try:
+        return os.get_terminal_size(fd)
+    except OSError:
+        return os.terminal_size((80, 24))

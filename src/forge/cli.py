@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from forge.args import parse_cli_args
+from forge.codex_config import prepare_container_config
 from forge.commands import build_codex_command, build_run_command, build_shell_command
 from forge.docker_api import DockerRunner
 from forge.env import collect_forwarded_env, resolve_image
@@ -39,6 +40,7 @@ def build_container_request(
     workspace = resolve_workspace(request.workspace)
     validate_host_identity(active_uid, active_gid)
     host_codex_dir = validate_codex_home(active_home)
+    host_codex_config_file = prepare_container_config(host_codex_dir)
     host_gh_config_dir = validate_gh_config(active_home)
     image = resolve_image(request.image, active_environ)
     extra_mounts = tuple(parse_volume_spec(spec, active_cwd) for spec in request.volume_specs)
@@ -57,12 +59,15 @@ def build_container_request(
             skip_git_repo_check=skip_git_repo_check,
         )
         interactive = False
+        nested_sandbox = not request.yolo
     elif isinstance(request, CodexOptions):
         command = build_codex_command(yolo=request.yolo, skip_git_repo_check=skip_git_repo_check)
         interactive = True
+        nested_sandbox = not request.yolo
     else:
         command = build_shell_command()
         interactive = True
+        nested_sandbox = False
 
     return ContainerRequest(
         command_name=request.command_name,
@@ -74,9 +79,11 @@ def build_container_request(
         command=command,
         interactive=interactive,
         host_codex_dir=host_codex_dir,
+        host_codex_config_file=host_codex_config_file,
         host_gh_config_dir=host_gh_config_dir,
         host_uid=active_uid,
         host_gid=active_gid,
+        nested_sandbox=nested_sandbox,
     )
 
 

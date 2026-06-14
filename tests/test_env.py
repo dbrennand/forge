@@ -15,6 +15,8 @@ def test_collect_forwarded_env() -> None:
             "OPENAI_API_KEY": "openai",
             "GITHUB_TOKEN": "github",
             "GH_TOKEN": "",
+            "TERM": "xterm-256color",
+            "LANG": "en_GB.UTF-8",
             "EXTRA": "ignored",
         }
     )
@@ -22,4 +24,6 @@ def test_collect_forwarded_env() -> None:
     assert forwarded == {
         "OPENAI_API_KEY": "openai",
         "GITHUB_TOKEN": "github",
+        "TERM": "xterm-256color",
+        "LANG": "en_GB.UTF-8",
     }

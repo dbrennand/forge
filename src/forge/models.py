@@ -52,9 +52,11 @@ class ContainerRequest:
     command: tuple[str, ...]
     interactive: bool
     host_codex_dir: Path
+    host_codex_config_file: Path | None
     host_gh_config_dir: Path
     host_uid: int
     host_gid: int
+    nested_sandbox: bool
 
     @property
     def auto_remove(self) -> bool:
