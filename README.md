@@ -24,12 +24,12 @@ uv run forge --help
 ## Commands
 
 Forge provides `shell`, `codex`, and `run` commands.
-See [docs/commands.md](/Users/dab/github.com/dbrennand/forge/docs/commands.md) for command purposes, options, examples, and SSH agent mounting behavior.
+See [docs/commands.md](docs/commands.md) for command purposes, options, examples, and SSH agent mounting behavior.
 
 ## Runtime image
 
 The default runtime image is `ghcr.io/dbrennand/forge:latest`.
-See [docs/container-image.md](/Users/dab/github.com/dbrennand/forge/docs/container-image.md) for details on the base image, build stages, pinned tool versions, and the tools included in the final runtime image.
+See [docs/container-image.md](docs/container-image.md) for details on the base image, build stages, pinned tool versions, and the tools included in the final runtime image.
 
 ## Development
 
