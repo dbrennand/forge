@@ -59,6 +59,7 @@ RUN apt-get update \
         nodejs \
         openssh-client \
         passwd \
+        ripgrep \
         tini \
     && rm -rf /var/lib/apt/lists/*
 
