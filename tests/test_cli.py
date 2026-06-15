@@ -59,6 +59,7 @@ def test_build_container_request_for_run(tmp_path: Path, home: Path) -> None:
     assert container_request.extra_mounts[0].container_path.as_posix() == "/cache"
     assert container_request.interactive is False
     assert container_request.host_codex_config_file is not None
+    assert container_request.host_ssh_auth_sock is None
     assert container_request.nested_sandbox is True
 
 
@@ -105,6 +106,60 @@ def test_build_container_request_for_shell(tmp_path: Path, home: Path) -> None:
     assert container_request.nested_sandbox is False
 
 
+def test_build_container_request_captures_ssh_agent_socket(
+    tmp_path: Path, home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Capture a valid host SSH agent socket as a Forge-managed mount."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    sock_path = tmp_path / "agent.sock"
+    monkeypatch.setattr("forge.cli.resolve_ssh_auth_sock", lambda environ: sock_path.resolve())
+    request = ShellOptions(
+        workspace=workspace,
+        image="image:tag",
+        keep_container=False,
+        volume_specs=(),
+    )
+
+    container_request = build_container_request(
+        request,
+        environ={"SSH_AUTH_SOCK": str(sock_path)},
+        cwd=tmp_path,
+        home=home,
+        uid=501,
+        gid=20,
+    )
+
+    assert container_request.host_ssh_auth_sock == sock_path.resolve()
+
+
+def test_build_container_request_ignores_invalid_ssh_agent_socket(
+    tmp_path: Path, home: Path
+) -> None:
+    """Ignore invalid SSH_AUTH_SOCK values without failing request construction."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    invalid_path = tmp_path / "not-a-socket"
+    invalid_path.write_text("x", encoding="utf-8")
+    request = ShellOptions(
+        workspace=workspace,
+        image="image:tag",
+        keep_container=False,
+        volume_specs=(),
+    )
+
+    container_request = build_container_request(
+        request,
+        environ={"SSH_AUTH_SOCK": str(invalid_path)},
+        cwd=tmp_path,
+        home=home,
+        uid=501,
+        gid=20,
+    )
+
+    assert container_request.host_ssh_auth_sock is None
+
+
 def test_build_container_request_rejects_reserved_volume_target_bypass(
     tmp_path: Path, home: Path
 ) -> None:
@@ -141,3 +196,31 @@ def test_build_container_request_rejects_reserved_host_volume_source(
 
     with pytest.raises(ValidationError):
         build_container_request(request, cwd=tmp_path, home=home, uid=501, gid=20)
+
+
+def test_build_container_request_rejects_ssh_agent_host_volume_source(
+    tmp_path: Path, home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reject extra mounts that reuse the active SSH agent socket path."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    sock_path = tmp_path / "agent.sock"
+    monkeypatch.setattr("forge.cli.resolve_ssh_auth_sock", lambda environ: sock_path.resolve())
+    request = RunOptions(
+        workspace=workspace,
+        image=None,
+        keep_container=False,
+        volume_specs=(f"{sock_path}:/agent.sock",),
+        yolo=False,
+        prompt="do work",
+    )
+
+    with pytest.raises(ValidationError):
+        build_container_request(
+            request,
+            environ={"SSH_AUTH_SOCK": str(sock_path)},
+            cwd=tmp_path,
+            home=home,
+            uid=501,
+            gid=20,
+        )

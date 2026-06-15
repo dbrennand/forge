@@ -9,7 +9,7 @@ from forge.args import parse_cli_args
 from forge.codex_config import prepare_container_config
 from forge.commands import build_codex_command, build_run_command, build_shell_command
 from forge.docker_api import DockerRunner
-from forge.env import collect_forwarded_env, resolve_image
+from forge.env import collect_forwarded_env, resolve_image, resolve_ssh_auth_sock
 from forge.errors import ForgeError
 from forge.models import CodexOptions, ContainerRequest, RunOptions, ShellOptions
 from forge.mounts import parse_volume_spec, validate_volume_sources, validate_volume_targets
@@ -55,12 +55,16 @@ def build_container_request(
     host_codex_dir = validate_codex_home(active_home)
     host_codex_config_file = prepare_container_config(host_codex_dir)
     host_gh_config_dir = validate_gh_config(active_home)
+    host_ssh_auth_sock = resolve_ssh_auth_sock(active_environ)
     image = resolve_image(request.image, active_environ)
     extra_mounts = tuple(parse_volume_spec(spec, active_cwd) for spec in request.volume_specs)
     validate_volume_targets(extra_mounts)
+    reserved_host_paths = [workspace, host_codex_dir, host_gh_config_dir]
+    if host_ssh_auth_sock is not None:
+        reserved_host_paths.append(host_ssh_auth_sock)
     validate_volume_sources(
         extra_mounts,
-        reserved_host_paths=(workspace, host_codex_dir, host_gh_config_dir),
+        reserved_host_paths=tuple(reserved_host_paths),
     )
     skip_git_repo_check = not detect_git_repository(workspace)
     forwarded_env = collect_forwarded_env(active_environ)
@@ -94,6 +98,7 @@ def build_container_request(
         host_codex_dir=host_codex_dir,
         host_codex_config_file=host_codex_config_file,
         host_gh_config_dir=host_gh_config_dir,
+        host_ssh_auth_sock=host_ssh_auth_sock,
         host_uid=active_uid,
         host_gid=active_gid,
         nested_sandbox=nested_sandbox,

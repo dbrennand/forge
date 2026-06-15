@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 from docker.errors import NotFound
 
+from forge.config import CONTAINER_SSH_AUTH_SOCK
 from forge.docker_api import (
     DockerRunner,
     _close_attached_socket,
@@ -31,6 +32,8 @@ def make_request(tmp_path: Path, *, keep_container: bool = False) -> ContainerRe
     config.write_text('model = "gpt-5.5"\n', encoding="utf-8")
     gh = tmp_path / ".config" / "gh"
     gh.mkdir(parents=True)
+    ssh_auth_sock = tmp_path / "agent.sock"
+    ssh_auth_sock.write_text("", encoding="utf-8")
     return ContainerRequest(
         command_name="run",
         image="image:tag",
@@ -49,6 +52,7 @@ def make_request(tmp_path: Path, *, keep_container: bool = False) -> ContainerRe
         host_codex_dir=codex,
         host_codex_config_file=config,
         host_gh_config_dir=gh,
+        host_ssh_auth_sock=ssh_auth_sock,
         host_uid=501,
         host_gid=20,
         nested_sandbox=True,
@@ -72,8 +76,10 @@ def test_build_container_kwargs(tmp_path: Path) -> None:
         == "/home/forge/.codex/config.toml"
     )
     assert kwargs["volumes"][str(request.host_gh_config_dir)]["mode"] == "ro"
+    assert kwargs["volumes"][str(request.host_ssh_auth_sock)]["bind"] == CONTAINER_SSH_AUTH_SOCK
     assert kwargs["labels"]["io.dbrennand.forge.command"] == "run"
     assert kwargs["security_opt"] == ["seccomp=unconfined", "apparmor=unconfined"]
+    assert kwargs["environment"]["SSH_AUTH_SOCK"] == CONTAINER_SSH_AUTH_SOCK
 
 
 def test_build_container_kwargs_keep_container(tmp_path: Path) -> None:
@@ -98,6 +104,7 @@ def test_build_container_kwargs_sets_interactive_term_fallback(tmp_path: Path) -
         host_codex_dir=request.host_codex_dir,
         host_codex_config_file=request.host_codex_config_file,
         host_gh_config_dir=request.host_gh_config_dir,
+        host_ssh_auth_sock=request.host_ssh_auth_sock,
         host_uid=request.host_uid,
         host_gid=request.host_gid,
         nested_sandbox=request.nested_sandbox,
@@ -123,6 +130,7 @@ def test_build_container_kwargs_omits_nested_sandbox_settings(tmp_path: Path) ->
         host_codex_dir=request.host_codex_dir,
         host_codex_config_file=None,
         host_gh_config_dir=request.host_gh_config_dir,
+        host_ssh_auth_sock=None,
         host_uid=request.host_uid,
         host_gid=request.host_gid,
         nested_sandbox=False,
@@ -131,6 +139,7 @@ def test_build_container_kwargs_omits_nested_sandbox_settings(tmp_path: Path) ->
     kwargs = build_container_kwargs(request)
 
     assert "security_opt" not in kwargs
+    assert "SSH_AUTH_SOCK" not in kwargs["environment"]
 
 
 def test_signal_to_docker_name() -> None:

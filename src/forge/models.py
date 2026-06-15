@@ -95,6 +95,7 @@ class ContainerRequest:
         host_codex_dir: Host Codex directory mounted into the container.
         host_codex_config_file: Sanitized Codex config mounted as `config.toml`, if any.
         host_gh_config_dir: Host GitHub CLI config directory mounted read-only.
+        host_ssh_auth_sock: Host-side SSH agent mount source used for the container, if any.
         host_uid: Host user identifier forwarded to the container.
         host_gid: Host group identifier forwarded to the container.
         nested_sandbox: Whether the inner Codex process needs relaxed container security.
@@ -111,6 +112,7 @@ class ContainerRequest:
     host_codex_dir: Path
     host_codex_config_file: Path | None
     host_gh_config_dir: Path
+    host_ssh_auth_sock: Path | None
     host_uid: int
     host_gid: int
     nested_sandbox: bool

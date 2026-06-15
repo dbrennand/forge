@@ -31,6 +31,11 @@ forge run --workspace /path/to/repo "explain this repository"
 
 Additional mounts can be passed with repeated `--volume HOST:CTR[:ro|rw]`.
 
+When Forge is launched from a host session with an active SSH agent, it automatically mounts
+that agent into the container and exposes it to in-container tools such as `git`. On macOS
+hosts, Forge uses the container runtime's host-services SSH socket instead of bind-mounting
+the raw host agent socket path.
+
 ## Runtime image
 
 The default runtime image is `ghcr.io/dbrennand/forge:latest`. It contains pinned versions of:

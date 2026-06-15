@@ -20,6 +20,7 @@ from forge.config import (
     CONTAINER_CODEX_HOME,
     CONTAINER_GH_CONFIG,
     CONTAINER_LABELS,
+    CONTAINER_SSH_AUTH_SOCK,
     CONTAINER_WORKSPACE,
     FORGE_HOME,
     INTERACTIVE_TERMINATION_GRACE_SECONDS,
@@ -54,6 +55,11 @@ def build_container_kwargs(request: ContainerRequest) -> dict[str, Any]:
             "bind": f"{CONTAINER_CODEX_HOME}/config.toml",
             "mode": "ro",
         }
+    if request.host_ssh_auth_sock is not None:
+        volumes[str(request.host_ssh_auth_sock)] = {
+            "bind": CONTAINER_SSH_AUTH_SOCK,
+            "mode": "rw",
+        }
     volumes.update(_volume_mapping(request.extra_mounts))
 
     environment = {
@@ -65,6 +71,8 @@ def build_container_kwargs(request: ContainerRequest) -> dict[str, Any]:
         "FORGE_HOST_GID": str(request.host_gid),
         **request.forwarded_env,
     }
+    if request.host_ssh_auth_sock is not None:
+        environment["SSH_AUTH_SOCK"] = CONTAINER_SSH_AUTH_SOCK
     if request.interactive and environment.get("TERM") in {None, "", "dumb"}:
         environment["TERM"] = "xterm-256color"
 
