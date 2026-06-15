@@ -23,18 +23,8 @@ uv run forge --help
 
 ## Commands
 
-```bash
-forge shell /path/to/repo
-forge codex /path/to/repo
-forge run --workspace /path/to/repo "explain this repository"
-```
-
-Additional mounts can be passed with repeated `--volume HOST:CTR[:ro|rw]`.
-
-When Forge is launched from a host session with an active SSH agent, it automatically mounts
-that agent into the container and exposes it to in-container tools such as `git`. On macOS
-hosts, Forge uses the container runtime's host-services SSH socket instead of bind-mounting
-the raw host agent socket path.
+Forge provides `shell`, `codex`, and `run` commands.
+See [docs/commands.md](/Users/dab/github.com/dbrennand/forge/docs/commands.md) for command purposes, options, examples, and SSH agent mounting behavior.
 
 ## Runtime image
 
