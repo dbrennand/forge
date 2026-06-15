@@ -38,12 +38,8 @@ the raw host agent socket path.
 
 ## Runtime image
 
-The default runtime image is `ghcr.io/dbrennand/forge:latest`. It contains pinned versions of:
-
-- Codex CLI `0.137.0`
-- GitHub CLI `2.93.0`
-- `ripgrep` for fast in-container code search
-- Debian `bubblewrap` so Codex can use the host-provided sandbox helper instead of its bundled fallback
+The default runtime image is `ghcr.io/dbrennand/forge:latest`.
+See [docs/container-image.md](/Users/dab/github.com/dbrennand/forge/docs/container-image.md) for details on the base image, build stages, pinned tool versions, and the tools included in the final runtime image.
 
 ## Development
 
