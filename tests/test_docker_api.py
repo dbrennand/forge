@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
@@ -65,6 +66,7 @@ def test_build_container_kwargs(tmp_path: Path) -> None:
     kwargs = build_container_kwargs(request)
 
     assert kwargs["auto_remove"] is True
+    assert re.fullmatch(r"forge_\d+", kwargs["name"]) is not None
     assert kwargs["working_dir"] == "/workspace"
     assert kwargs["environment"]["HOME"] == "/home/forge"
     assert kwargs["environment"]["CODEX_HOME"] == "/home/forge/.codex"
@@ -87,6 +89,19 @@ def test_build_container_kwargs_keep_container(tmp_path: Path) -> None:
     request = make_request(tmp_path, keep_container=True)
     kwargs = build_container_kwargs(request)
     assert kwargs["auto_remove"] is False
+
+
+def test_build_container_kwargs_uses_generated_forge_container_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Use the Forge container naming convention for created containers."""
+    request = make_request(tmp_path)
+    monkeypatch.setattr("forge.docker_api.random.randrange", lambda upper_bound: 42)
+
+    kwargs = build_container_kwargs(request)
+
+    assert kwargs["name"] == "forge_000000000042"
 
 
 def test_build_container_kwargs_sets_interactive_term_fallback(tmp_path: Path) -> None:

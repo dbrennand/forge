@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import random
 import selectors
 import signal
 import socket
@@ -34,6 +35,15 @@ FORWARDED_SIGNALS = {
     signal.SIGTERM: "SIGTERM",
     signal.SIGHUP: "SIGHUP",
 }
+
+
+def generate_container_name() -> str:
+    """Generate a Forge-managed Docker container name.
+
+    Returns:
+        str: Container name in the `forge_<random numbers>` format.
+    """
+    return f"forge_{random.randrange(10**12):012d}"
 
 
 def build_container_kwargs(request: ContainerRequest) -> dict[str, Any]:
@@ -81,6 +91,7 @@ def build_container_kwargs(request: ContainerRequest) -> dict[str, Any]:
 
     kwargs = {
         "image": request.image,
+        "name": generate_container_name(),
         "command": list(request.command),
         "detach": True,
         "auto_remove": request.auto_remove,
