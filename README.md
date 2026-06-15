@@ -1,11 +1,11 @@
 # forge
 
-`forge` is a Python CLI that launches Codex or a shell inside a prepared Docker runtime.
+`forge` is a Python CLI that launches Codex or a shell inside a prepared Docker-compatible container runtime.
 
 ## Requirements
 
 - Python 3.12+
-- Docker
+- A Docker-compatible container runtime such as Docker or OrbStack
 - `~/.codex/auth.json`
 - `$HOME/.config/gh/`
 
@@ -65,7 +65,7 @@ In GitHub Actions, the CI workflow also appends the coverage table to the job su
 
 ## Release
 
-Create a version tag that matches `pyproject.toml`, for example `v0.1.0`. The release workflow publishes:
+Create a version tag that matches `pyproject.toml`, for example `0.1.0`. The release workflow publishes:
 
 - `ghcr.io/dbrennand/forge:<version>`
 - `ghcr.io/dbrennand/forge:latest`
