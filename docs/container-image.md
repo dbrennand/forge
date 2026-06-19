@@ -176,6 +176,20 @@ Operationally, the image also includes:
 - environment defaults for `HOME`, `XDG_CONFIG_HOME`, and `CODEX_HOME`
 - `uv` tool and managed-Python directories under `/opt/uv`
 
+When launched by Forge, the container uses:
+
+- `HOME=/home/forge`
+- `XDG_CONFIG_HOME=/home/forge/.config`
+- `CODEX_HOME=/home/forge/.codex/forge`
+
+Forge mounts the host `~/.codex` tree at `/home/forge/.codex`, then prepares
+the managed `CODEX_HOME` under that mount. The managed home contains:
+
+- Forge-generated `config.toml`
+- optional Forge-generated legacy `hooks.json`
+- symlinks back to most sibling entries in `/home/forge/.codex` so Codex can
+  reuse auth and compatible state without mutating the host's primary files
+
 ## Entrypoint Behavior
 
 The image entrypoint is `/usr/local/bin/forge-entrypoint`, wrapped by `tini`.
@@ -197,6 +211,11 @@ Although the installed `ai-guardian` package includes the `ai-guardian mcp-serve
 subcommand, Forge does not register or start it for Codex. Codex uses AI Guardian
 through hook configuration only.
 
+Codex hook trust is expected to persist through the managed `CODEX_HOME` files.
+Forge keeps those generated files at stable paths and only rewrites them when
+their contents change, so Codex should only prompt for hook review on first use
+or after a real managed-hook/config change.
+
 ## Architecture Support
 
 The GitHub CLI install stage explicitly handles:
@@ -208,6 +227,14 @@ The release workflow publishes multi-architecture images for:
 
 - `linux/amd64`
 - `linux/arm64`
+
+Before publishing those tags, the workflow also:
+
+- builds a local `forge:test` image with the pinned build arguments
+- runs `scripts/smoke_runtime.sh forge:test`
+
+This ensures the tagged release image passes the same runtime smoke checks used
+for local image validation before the multi-architecture push happens.
 
 ## Updating the Image
 

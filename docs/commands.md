@@ -20,6 +20,9 @@ Forge also generates a persistent Forge-managed Codex home under
 - `~/.codex/forge/config.toml` is the managed Codex config
 - `~/.codex/forge/hooks.json` is the managed legacy hooks file when the host has
   a legacy hooks file
+- most other entries from `~/.codex/` are mirrored into `~/.codex/forge/` as
+  relative symlinks so the managed home can reuse host auth and compatible
+  Codex state
 
 This lets Forge enable AI Guardian inside the container without modifying the
 host's real `~/.codex/config.toml` or `~/.codex/hooks.json`.
@@ -27,6 +30,16 @@ host's real `~/.codex/config.toml` or `~/.codex/hooks.json`.
 The managed home reuses host auth and compatible Codex state through the same
 mounted `~/.codex` tree. Codex may update the Forge-managed config to persist
 hook trust state after you review the AI Guardian hooks.
+
+Trust persistence behavior:
+
+- Forge keeps the managed hook files at stable paths under `~/.codex/forge/`
+- Forge only rewrites those generated files when their contents actually change
+- after you trust the AI Guardian hooks once, Codex should normally reuse that
+  trust state on later launches
+- Codex may ask for review again when Forge's generated managed config changes,
+  for example after a host `~/.codex/config.toml` change that affects the
+  sanitized merged output
 
 The container entrypoint remaps the in-container `forge` user to the invoking
 host UID and GID, so files created in the workspace keep host-compatible
@@ -96,6 +109,9 @@ Default runtime behavior:
   with the package, but Forge does not register it for Codex
 - Codex may ask for hook review the first time it sees Forge's managed hook
   files, and again only when those generated files actually change
+- when the host has a legacy `~/.codex/hooks.json` file and it is invalid or
+  uses an unexpected JSON shape, Forge warns on stderr and mounts a sanitized
+  empty legacy hooks file instead of passing the host file through unchanged
 
 ## SSH Agent Mounting
 

@@ -24,7 +24,9 @@ uv run forge --help
 ## Commands
 
 Forge provides `shell`, `codex`, and `run` commands.
-See [docs/commands.md](docs/commands.md) for command purposes, options, examples, and SSH agent mounting behavior.
+See [docs/commands.md](docs/commands.md) for command purposes, options,
+examples, SSH agent mounting behavior, and AI Guardian / managed Codex home
+behavior.
 
 ## Runtime image
 
@@ -55,3 +57,6 @@ Create a version tag that matches `pyproject.toml`, for example `0.1.0`. The rel
 
 - `ghcr.io/dbrennand/forge:<version>`
 - `ghcr.io/dbrennand/forge:latest`
+
+Before pushing those tags, the workflow builds a local smoke-test image and runs
+`bash scripts/smoke_runtime.sh forge:test`.
