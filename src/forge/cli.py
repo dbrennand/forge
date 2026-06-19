@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from forge.args import parse_cli_args
-from forge.codex_config import prepare_container_config
+from forge.codex_config import prepare_container_config, prepare_container_hooks
 from forge.commands import build_codex_command, build_run_command, build_shell_command
 from forge.docker_api import DockerRunner
 from forge.env import collect_forwarded_env, resolve_image, resolve_ssh_auth_sock
@@ -53,7 +54,6 @@ def build_container_request(
     workspace = resolve_workspace(request.workspace)
     validate_host_identity(active_uid, active_gid)
     host_codex_dir = validate_codex_home(active_home)
-    host_codex_config_file = prepare_container_config(host_codex_dir)
     host_gh_config_dir = validate_gh_config(active_home)
     host_ssh_auth_sock = resolve_ssh_auth_sock(active_environ)
     image = resolve_image(request.image, active_environ)
@@ -86,6 +86,9 @@ def build_container_request(
         interactive = True
         nested_sandbox = False
 
+    host_codex_config_file = prepare_container_config(host_codex_dir)
+    host_codex_hooks_file = prepare_container_hooks(host_codex_dir)
+
     return ContainerRequest(
         command_name=request.command_name,
         image=image,
@@ -97,8 +100,10 @@ def build_container_request(
         interactive=interactive,
         host_codex_dir=host_codex_dir,
         host_codex_config_file=host_codex_config_file,
+        host_codex_hooks_file=host_codex_hooks_file,
         host_gh_config_dir=host_gh_config_dir,
         host_ssh_auth_sock=host_ssh_auth_sock,
+        prepared_mount_dirs=(),
         host_uid=active_uid,
         host_gid=active_gid,
         nested_sandbox=nested_sandbox,
@@ -125,16 +130,22 @@ def run(
     Returns:
         int: Process exit status from the container execution.
     """
-    request = parse_cli_args(argv)
-    container_request = build_container_request(
-        request,
-        environ=environ,
-        cwd=cwd,
-        home=home,
-    )
-    docker_runner = DockerRunner.from_env() if runner is None else runner
-    docker_runner.ping()
-    return docker_runner.execute(container_request)
+    container_request: ContainerRequest | None = None
+    try:
+        request = parse_cli_args(argv)
+        container_request = build_container_request(
+            request,
+            environ=environ,
+            cwd=cwd,
+            home=home,
+        )
+        docker_runner = DockerRunner.from_env() if runner is None else runner
+        docker_runner.ping()
+        return docker_runner.execute(container_request)
+    finally:
+        if container_request is not None:
+            for directory in container_request.prepared_mount_dirs:
+                shutil.rmtree(directory, ignore_errors=True)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
