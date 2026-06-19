@@ -53,10 +53,13 @@ def test_resolve_ssh_auth_sock_with_valid_socket(
 
     monkeypatch.setattr(Path, "stat", fake_stat)
 
-    assert resolve_ssh_auth_sock(
-        {"SSH_AUTH_SOCK": str(sock_path)},
-        host_platform="Linux",
-    ) == sock_path
+    assert (
+        resolve_ssh_auth_sock(
+            {"SSH_AUTH_SOCK": str(sock_path)},
+            host_platform="Linux",
+        )
+        == sock_path
+    )
 
 
 def test_resolve_ssh_auth_sock_uses_host_services_socket_on_darwin(
