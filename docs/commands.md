@@ -13,6 +13,21 @@ Forge also mounts host authentication state needed by in-container tools:
 - `~/.codex` is mounted at `/home/forge/.codex`
 - `$HOME/.config/gh` is mounted at `/home/forge/.config/gh` as read-only
 
+Forge also generates a persistent Forge-managed Codex home under
+`~/.codex/forge/` and runs Codex from that managed home:
+
+- `CODEX_HOME=/home/forge/.codex/forge`
+- `~/.codex/forge/config.toml` is the managed Codex config
+- `~/.codex/forge/hooks.json` is the managed legacy hooks file when the host has
+  a legacy hooks file
+
+This lets Forge enable AI Guardian inside the container without modifying the
+host's real `~/.codex/config.toml` or `~/.codex/hooks.json`.
+
+The managed home reuses host auth and compatible Codex state through the same
+mounted `~/.codex` tree. Codex may update the Forge-managed config to persist
+hook trust state after you review the AI Guardian hooks.
+
 The container entrypoint remaps the in-container `forge` user to the invoking
 host UID and GID, so files created in the workspace keep host-compatible
 ownership.
@@ -59,6 +74,28 @@ when they are present:
 - `COLORTERM`
 - `LANG`
 - `LC_ALL`
+
+## AI Guardian Integration
+
+The default Forge runtime image includes:
+
+- `uv`
+- `ai-guardian`
+- `gitleaks`
+
+Forge enables AI Guardian for `forge run`, `forge codex`, and `forge shell`
+through the Forge-managed Codex home. It also starts the AI Guardian daemon in
+the background before the main container command launches.
+
+Default runtime behavior:
+
+- built-in Codex tools continue to work through the normal hook pipeline
+- unapproved Skills and MCP servers are blocked by AI Guardian's default policy
+  unless the user changes AI Guardian policy inside the container
+- the `ai-guardian mcp-server` command is present in the image because it ships
+  with the package, but Forge does not register it for Codex
+- Codex may ask for hook review the first time it sees Forge's managed hook
+  files, and again only when those generated files actually change
 
 ## SSH Agent Mounting
 
@@ -113,6 +150,8 @@ Behavior:
 - Uses workspace-write sandboxing unless `--yolo` is set.
 - Adds `--skip-git-repo-check` automatically when the workspace is not a Git
   repository or worktree.
+- Enables AI Guardian through the Forge-managed Codex home.
+- Starts the AI Guardian daemon in the background before launching Codex.
 
 Examples:
 
@@ -152,6 +191,8 @@ Behavior:
   set.
 - Adds `--skip-git-repo-check` automatically when the workspace is not a Git
   repository or worktree.
+- Enables AI Guardian through the Forge-managed Codex home.
+- Starts the AI Guardian daemon in the background before launching Codex.
 
 Examples:
 
@@ -186,6 +227,9 @@ Behavior:
 - Starts `/bin/bash` inside the runtime container.
 - Sets the working directory to `/workspace`.
 - Does not enable nested Codex sandbox settings because Codex is not launched.
+- Includes `uv`, `ai-guardian`, and `gitleaks` in the runtime image.
+- Uses the Forge-managed Codex home at `/home/forge/.codex/forge`.
+- Auto-starts the AI Guardian daemon before opening the shell.
 
 Examples:
 
