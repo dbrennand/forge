@@ -24,6 +24,59 @@ RUN case "${TARGETARCH}" in \
     && install "/tmp/gh_${GH_VERSION}_linux_${gh_arch}/bin/gh" /usr/local/bin/gh \
     && rm -rf /tmp/gh.tgz "/tmp/gh_${GH_VERSION}_linux_${gh_arch}"
 
+FROM debian:bookworm-slim AS uv-builder
+
+ARG UV_VERSION=0.11.21
+ARG TARGETARCH
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        ca-certificates \
+        curl \
+        tar \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN case "${TARGETARCH}" in \
+        amd64) uv_dist="uv-x86_64-unknown-linux-gnu" ;; \
+        arm64) uv_dist="uv-aarch64-unknown-linux-gnu" ;; \
+        *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && curl --fail --location --silent --show-error \
+        "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${uv_dist}.tar.gz" \
+        --output /tmp/uv.tgz \
+    && tar -xzf /tmp/uv.tgz -C /tmp \
+    && install "/tmp/${uv_dist}/uv" /usr/local/bin/uv \
+    && install "/tmp/${uv_dist}/uvx" /usr/local/bin/uvx \
+    && rm -rf /tmp/uv.tgz "/tmp/${uv_dist}"
+
+FROM debian:bookworm-slim AS gitleaks-builder
+
+ARG GITLEAKS_VERSION=8.30.1
+ARG TARGETARCH
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        ca-certificates \
+        curl \
+        tar \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN case "${TARGETARCH}" in \
+        amd64) gitleaks_arch="x64" ;; \
+        arm64) gitleaks_arch="arm64" ;; \
+        *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && curl --fail --location --silent --show-error \
+        "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${gitleaks_arch}.tar.gz" \
+        --output /tmp/gitleaks.tgz \
+    && tar -xzf /tmp/gitleaks.tgz -C /tmp \
+    && install /tmp/gitleaks /usr/local/bin/gitleaks \
+    && rm -rf /tmp/gitleaks.tgz /tmp/gitleaks
+
 FROM debian:bookworm-slim AS codex-builder
 
 ARG CODEX_VERSION=0.137.0
@@ -42,11 +95,16 @@ RUN npm install --global "@openai/codex@${CODEX_VERSION}" \
 
 FROM debian:bookworm-slim
 
+ARG AI_GUARDIAN_VERSION=1.11.1
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/forge
 ENV XDG_CONFIG_HOME=/home/forge/.config
 ENV CODEX_HOME=/home/forge/.codex
 ENV PYTHONUNBUFFERED=1
+ENV UV_TOOL_BIN_DIR=/usr/local/bin
+ENV UV_TOOL_DIR=/opt/uv/tools
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
@@ -64,8 +122,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=gh-builder /usr/local/bin/gh /usr/local/bin/gh
-COPY --from=codex-builder /usr/local/bin/codex /usr/local/bin/codex
+COPY --from=uv-builder /usr/local/bin/uv /usr/local/bin/uv
+COPY --from=uv-builder /usr/local/bin/uvx /usr/local/bin/uvx
+COPY --from=gitleaks-builder /usr/local/bin/gitleaks /usr/local/bin/gitleaks
 COPY --from=codex-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+
+RUN ln -sf ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex
+
+RUN mkdir -p "${UV_TOOL_DIR}" "${UV_PYTHON_INSTALL_DIR}" \
+    && uv tool install --python 3.13 "ai-guardian==${AI_GUARDIAN_VERSION}"
 
 RUN groupadd --gid 1000 forge \
     && useradd --uid 1000 --gid 1000 --create-home --home-dir /home/forge --shell /bin/bash forge \
