@@ -31,6 +31,8 @@ def make_request(tmp_path: Path, *, keep_container: bool = False) -> ContainerRe
     codex.mkdir()
     config = tmp_path / "config.toml"
     config.write_text('model = "gpt-5.5"\n', encoding="utf-8")
+    hooks = tmp_path / "hooks.json"
+    hooks.write_text("{}", encoding="utf-8")
     gh = tmp_path / ".config" / "gh"
     gh.mkdir(parents=True)
     ssh_auth_sock = tmp_path / "agent.sock"
@@ -52,8 +54,10 @@ def make_request(tmp_path: Path, *, keep_container: bool = False) -> ContainerRe
         interactive=False,
         host_codex_dir=codex,
         host_codex_config_file=config,
+        host_codex_hooks_file=hooks,
         host_gh_config_dir=gh,
         host_ssh_auth_sock=ssh_auth_sock,
+        prepared_mount_dirs=(config.parent, hooks.parent),
         host_uid=501,
         host_gid=20,
         nested_sandbox=True,
@@ -69,14 +73,12 @@ def test_build_container_kwargs(tmp_path: Path) -> None:
     assert re.fullmatch(r"forge_\d+", kwargs["name"]) is not None
     assert kwargs["working_dir"] == "/workspace"
     assert kwargs["environment"]["HOME"] == "/home/forge"
-    assert kwargs["environment"]["CODEX_HOME"] == "/home/forge/.codex"
+    assert kwargs["environment"]["CODEX_HOME"] == "/home/forge/.codex/forge"
     assert kwargs["environment"]["FORGE_HOST_UID"] == "501"
     assert kwargs["volumes"][str(request.workspace)]["bind"] == "/workspace"
     assert kwargs["volumes"][str(request.host_codex_dir)]["bind"] == "/home/forge/.codex"
-    assert (
-        kwargs["volumes"][str(request.host_codex_config_file)]["bind"]
-        == "/home/forge/.codex/config.toml"
-    )
+    assert str(request.host_codex_config_file) not in kwargs["volumes"]
+    assert str(request.host_codex_hooks_file) not in kwargs["volumes"]
     assert kwargs["volumes"][str(request.host_gh_config_dir)]["mode"] == "ro"
     assert kwargs["volumes"][str(request.host_ssh_auth_sock)]["bind"] == CONTAINER_SSH_AUTH_SOCK
     assert kwargs["labels"]["io.dbrennand.forge.command"] == "run"
@@ -118,8 +120,10 @@ def test_build_container_kwargs_sets_interactive_term_fallback(tmp_path: Path) -
         interactive=True,
         host_codex_dir=request.host_codex_dir,
         host_codex_config_file=request.host_codex_config_file,
+        host_codex_hooks_file=request.host_codex_hooks_file,
         host_gh_config_dir=request.host_gh_config_dir,
         host_ssh_auth_sock=request.host_ssh_auth_sock,
+        prepared_mount_dirs=request.prepared_mount_dirs,
         host_uid=request.host_uid,
         host_gid=request.host_gid,
         nested_sandbox=request.nested_sandbox,
@@ -144,8 +148,10 @@ def test_build_container_kwargs_omits_nested_sandbox_settings(tmp_path: Path) ->
         interactive=request.interactive,
         host_codex_dir=request.host_codex_dir,
         host_codex_config_file=None,
+        host_codex_hooks_file=None,
         host_gh_config_dir=request.host_gh_config_dir,
         host_ssh_auth_sock=None,
+        prepared_mount_dirs=(),
         host_uid=request.host_uid,
         host_gid=request.host_gid,
         nested_sandbox=False,
@@ -334,3 +340,45 @@ def test_wait_for_container_requires_cached_exit_code_when_missing() -> None:
 
     with pytest.raises(ContainerRuntimeError):
         runner._wait_for_container(FakeContainer())
+
+
+def test_execute_cleans_up_prepared_mount_dirs(tmp_path: Path) -> None:
+    """Remove prepared temporary mount directories after container execution."""
+    request = make_request(tmp_path)
+    observed: list[Path] = []
+
+    class FakeContainer:
+        """Simulate a successful non-interactive container run."""
+
+        id = "container-id"
+
+        def start(self) -> None:
+            """Start the fake container."""
+
+        def attach(self, **kwargs: object) -> list[tuple[bytes | None, bytes | None]]:
+            """Return no streamed output."""
+            return []
+
+        def wait(self) -> dict[str, int]:
+            """Report successful container exit."""
+            return {"StatusCode": 0}
+
+    class FakeContainers:
+        """Expose the Docker `containers.create` surface used by the runner."""
+
+        def create(self, **kwargs: object) -> FakeContainer:
+            """Create the fake container."""
+            return FakeContainer()
+
+    class CleanupTrackingRunner(DockerRunner):
+        """Record prepared mount cleanup without touching the filesystem."""
+
+        def _cleanup_prepared_mount_dirs(self, request: ContainerRequest) -> None:
+            """Capture the directories that would be cleaned."""
+            observed.extend(request.prepared_mount_dirs)
+
+    client = SimpleNamespace(containers=FakeContainers())
+    runner = CleanupTrackingRunner(client=client)
+
+    assert runner.execute(request) == 0
+    assert observed == list(request.prepared_mount_dirs)
