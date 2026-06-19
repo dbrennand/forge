@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import random
 import selectors
+import shutil
 import signal
 import socket
 import sys
@@ -21,6 +22,7 @@ from forge.config import (
     CONTAINER_CODEX_HOME,
     CONTAINER_GH_CONFIG,
     CONTAINER_LABELS,
+    CONTAINER_MANAGED_CODEX_HOME,
     CONTAINER_SSH_AUTH_SOCK,
     CONTAINER_WORKSPACE,
     FORGE_HOME,
@@ -60,11 +62,6 @@ def build_container_kwargs(request: ContainerRequest) -> dict[str, Any]:
         str(request.host_codex_dir): {"bind": CONTAINER_CODEX_HOME, "mode": "rw"},
         str(request.host_gh_config_dir): {"bind": CONTAINER_GH_CONFIG, "mode": "ro"},
     }
-    if request.host_codex_config_file is not None:
-        volumes[str(request.host_codex_config_file)] = {
-            "bind": f"{CONTAINER_CODEX_HOME}/config.toml",
-            "mode": "ro",
-        }
     if request.host_ssh_auth_sock is not None:
         volumes[str(request.host_ssh_auth_sock)] = {
             "bind": CONTAINER_SSH_AUTH_SOCK,
@@ -75,7 +72,7 @@ def build_container_kwargs(request: ContainerRequest) -> dict[str, Any]:
     environment = {
         "HOME": FORGE_HOME,
         "XDG_CONFIG_HOME": f"{FORGE_HOME}/.config",
-        "CODEX_HOME": CONTAINER_CODEX_HOME,
+        "CODEX_HOME": CONTAINER_MANAGED_CODEX_HOME,
         "PYTHONUNBUFFERED": "1",
         "FORGE_HOST_UID": str(request.host_uid),
         "FORGE_HOST_GID": str(request.host_gid),
@@ -183,6 +180,7 @@ class DockerRunner:
             elif container is not None and not started:
                 with suppress(DockerException):
                     container.remove(force=True)
+            self._cleanup_prepared_mount_dirs(request)
 
     def _run_streaming(self, container: Any) -> int:
         """Stream non-interactive container output until completion.
@@ -389,6 +387,15 @@ class DockerRunner:
         if isinstance(exit_code, int):
             return exit_code
         raise ContainerRuntimeError("Container exited before Forge could determine its exit status")
+
+    def _cleanup_prepared_mount_dirs(self, request: ContainerRequest) -> None:
+        """Remove Forge-generated temporary mount directories after execution.
+
+        Args:
+            request: Container request whose prepared mount directories should be removed.
+        """
+        for directory in request.prepared_mount_dirs:
+            shutil.rmtree(directory, ignore_errors=True)
 
 
 class _SignalForwarder:
