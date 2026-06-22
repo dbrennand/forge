@@ -94,7 +94,8 @@ class ContainerRequest:
         interactive: Whether the container should attach an interactive TTY.
         host_codex_dir: Host Codex directory mounted into the container.
         host_codex_config_file: Prepared Forge-managed Codex config path, if any.
-        host_codex_hooks_file: Prepared Forge-managed legacy hooks path, if any.
+        host_codex_hooks_file: Prepared Forge-managed legacy hooks path, if any
+            usable legacy hooks remain.
         host_gh_config_dir: Host GitHub CLI config directory mounted read-only.
         host_ssh_auth_sock: Host-side SSH agent mount source used for the container, if any.
         host_uid: Host user identifier forwarded to the container.
