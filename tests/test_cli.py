@@ -118,13 +118,16 @@ def test_build_container_request_for_shell(tmp_path: Path, home: Path) -> None:
     assert container_request.nested_sandbox is False
 
 
-def test_build_container_request_mounts_managed_legacy_hooks_when_host_file_exists(
+def test_build_container_request_mounts_managed_legacy_hooks_when_host_file_contains_hooks(
     tmp_path: Path, home: Path
 ) -> None:
-    """Mount the Forge-managed legacy hooks file only when the host has one."""
+    """Mount the Forge-managed legacy hooks file only when legacy hooks remain."""
     workspace = tmp_path / "repo"
     workspace.mkdir()
-    (home / ".codex" / "hooks.json").write_text("{}", encoding="utf-8")
+    (home / ".codex" / "hooks.json").write_text(
+        '{"hooks":{"SessionStart":[{"hooks":[{"command":"other-hook"}]}]}}',
+        encoding="utf-8",
+    )
     request = CodexOptions(
         workspace=workspace,
         image="image:tag",
