@@ -19,7 +19,7 @@ Forge also generates a persistent Forge-managed Codex home under
 - `CODEX_HOME=/home/forge/.codex/forge`
 - `~/.codex/forge/config.toml` is the managed Codex config
 - `~/.codex/forge/hooks.json` is the managed legacy hooks file when the host has
-  a legacy hooks file
+  non-empty legacy hooks that still apply after Forge sanitizes them
 - most other entries from `~/.codex/` are mirrored into `~/.codex/forge/` as
   relative symlinks so the managed home can reuse host auth and compatible
   Codex state
@@ -35,6 +35,10 @@ Trust persistence behavior:
 
 - Forge keeps the managed hook files at stable paths under `~/.codex/forge/`
 - Forge only rewrites those generated files when their contents actually change
+- Forge preserves Codex's managed `[hooks.state]` trust table when regenerating
+  `~/.codex/forge/config.toml`
+- Forge removes `~/.codex/forge/hooks.json` when there are no usable legacy
+  hooks to avoid leaving a stale legacy overlay in `CODEX_HOME`
 - after you trust the AI Guardian hooks once, Codex should normally reuse that
   trust state on later launches
 - Codex may ask for review again when Forge's generated managed config changes,
@@ -109,9 +113,11 @@ Default runtime behavior:
   with the package, but Forge does not register it for Codex
 - Codex may ask for hook review the first time it sees Forge's managed hook
   files, and again only when those generated files actually change
-- when the host has a legacy `~/.codex/hooks.json` file and it is invalid or
-  uses an unexpected JSON shape, Forge warns on stderr and mounts a sanitized
-  empty legacy hooks file instead of passing the host file through unchanged
+- when the host has an empty legacy `~/.codex/hooks.json`, Forge treats it as
+  absent
+- when the host has a non-empty legacy `~/.codex/hooks.json` file and it is
+  invalid or uses an unexpected JSON shape, Forge warns on stderr and skips the
+  legacy hooks overlay instead of passing the host file through unchanged
 
 ## SSH Agent Mounting
 
