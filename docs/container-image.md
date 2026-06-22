@@ -212,9 +212,11 @@ subcommand, Forge does not register or start it for Codex. Codex uses AI Guardia
 through hook configuration only.
 
 Codex hook trust is expected to persist through the managed `CODEX_HOME` files.
-Forge keeps those generated files at stable paths and only rewrites them when
-their contents change, so Codex should only prompt for hook review on first use
-or after a real managed-hook/config change.
+Forge keeps those generated files at stable paths, preserves Codex's managed
+`[hooks.state]` trust table, and only rewrites files when their contents change.
+Forge also removes inactive managed legacy `hooks.json` overlays, so Codex
+should only prompt for hook review on first use or after a real
+managed-hook/config change.
 
 ## Architecture Support
 
