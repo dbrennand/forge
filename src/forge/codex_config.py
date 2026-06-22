@@ -106,18 +106,24 @@ def prepare_container_hooks(codex_home: Path) -> Path | None:
 
     Returns:
         Path | None: Path to the persistent Forge-managed hooks file, or `None`
-        when the host has no legacy hooks file.
+        when the host has no usable legacy hooks file.
     """
     hooks_path = codex_home / "hooks.json"
     if not hooks_path.is_file():
+        _remove_managed_file(codex_home, MANAGED_HOOKS_FILE_NAME)
+        return None
+
+    hooks_content = hooks_path.read_text(encoding="utf-8")
+    if not hooks_content.strip():
+        _remove_managed_file(codex_home, MANAGED_HOOKS_FILE_NAME)
         return None
 
     try:
-        hooks_data = json.loads(hooks_path.read_text(encoding="utf-8"))
+        hooks_data = json.loads(hooks_content)
     except json.JSONDecodeError:
         print(
             f"Warning: ignoring invalid Codex hooks file at {hooks_path}; "
-            "using a sanitized empty legacy hooks file instead.",
+            "skipping the legacy hooks overlay.",
             file=sys.stderr,
         )
         hooks_data = {"hooks": {}}
@@ -125,13 +131,16 @@ def prepare_container_hooks(codex_home: Path) -> Path | None:
     if not isinstance(hooks_data, dict):
         print(
             f"Warning: ignoring unexpected Codex hooks format at {hooks_path}; "
-            "using a sanitized empty legacy hooks file instead.",
+            "skipping the legacy hooks overlay.",
             file=sys.stderr,
         )
         hooks_data = {"hooks": {}}
 
     normalized_hooks = _normalize_legacy_hooks(hooks_data)
     sanitized_hooks = _strip_ai_guardian_from_legacy_hooks(normalized_hooks)
+    if _legacy_hooks_are_empty(sanitized_hooks):
+        _remove_managed_file(codex_home, MANAGED_HOOKS_FILE_NAME)
+        return None
 
     return _write_managed_file(
         codex_home,
@@ -330,6 +339,10 @@ def _carry_forward_managed_hook_state(
         the canonical AI Guardian entries when present.
     """
     updated_hooks = dict(hooks)
+    managed_state = managed_hooks.get("state")
+    if "state" not in updated_hooks and isinstance(managed_state, dict):
+        updated_hooks["state"] = managed_state
+
     for event_name in HOOK_EVENT_ORDER:
         managed_entries = managed_hooks.get(event_name, [])
         current_entries = updated_hooks.get(event_name, [])
@@ -342,17 +355,89 @@ def _carry_forward_managed_hook_state(
         if managed_entry is None or current_entry is None or current_index < 0:
             continue
 
-        updated_entry = dict(current_entry)
-        for key, value in managed_entry.items():
-            if key in {"matcher", "hooks"}:
-                continue
-            updated_entry[key] = value
+        updated_entry = _carry_forward_managed_event_state(
+            current_entry=current_entry,
+            managed_entry=managed_entry,
+            template_entry=template_entry,
+        )
 
         updated_hooks[event_name] = [
             *current_entries[:current_index],
             updated_entry,
             *current_entries[current_index + 1 :],
         ]
+    return updated_hooks
+
+
+def _carry_forward_managed_event_state(
+    *, current_entry: dict[str, Any], managed_entry: dict[str, Any], template_entry: dict[str, Any]
+) -> dict[str, Any]:
+    """Copy persisted managed state onto one canonical AI Guardian event entry.
+
+    Args:
+        current_entry: Newly generated canonical event entry.
+        managed_entry: Existing managed event entry from the prior run.
+        template_entry: Canonical template entry for the event.
+
+    Returns:
+        dict[str, Any]: Event entry with persisted managed metadata restored.
+    """
+    updated_entry = dict(current_entry)
+    for key, value in managed_entry.items():
+        if key in {"matcher", "hooks"}:
+            continue
+        updated_entry[key] = value
+
+    current_hooks = current_entry.get("hooks")
+    managed_hooks = managed_entry.get("hooks")
+    template_hooks = template_entry.get("hooks")
+    if (
+        isinstance(current_hooks, list)
+        and isinstance(managed_hooks, list)
+        and isinstance(template_hooks, list)
+    ):
+        updated_entry["hooks"] = _carry_forward_managed_command_state(
+            current_hooks=current_hooks,
+            managed_hooks=managed_hooks,
+            template_hooks=template_hooks,
+        )
+
+    return updated_entry
+
+
+def _carry_forward_managed_command_state(
+    *,
+    current_hooks: list[Any],
+    managed_hooks: list[Any],
+    template_hooks: list[Any],
+) -> list[Any]:
+    """Copy persisted managed state onto canonical AI Guardian hook commands.
+
+    Args:
+        current_hooks: Newly generated hook commands for one event entry.
+        managed_hooks: Existing managed hook commands from the prior run.
+        template_hooks: Canonical hook commands for the event entry.
+
+    Returns:
+        list[Any]: Hook command list with persisted managed metadata restored.
+    """
+    updated_hooks = list(current_hooks)
+    for template_hook in template_hooks:
+        if not isinstance(template_hook, dict):
+            continue
+
+        managed_hook, _ = _find_matching_hook_command(managed_hooks, template_hook)
+        current_hook, current_index = _find_matching_hook_command(updated_hooks, template_hook)
+        if managed_hook is None or current_hook is None or current_index < 0:
+            continue
+
+        updated_hook = dict(current_hook)
+        for key, value in managed_hook.items():
+            if key in template_hook:
+                continue
+            updated_hook[key] = value
+        updated_hooks[current_index] = updated_hook
+
     return updated_hooks
 
 
@@ -407,6 +492,31 @@ def _find_matching_event_entry(
         if entry_matcher == template_matcher or (
             template_matcher is None and "matcher" not in entry
         ):
+            return entry, index
+    return None, -1
+
+
+def _find_matching_hook_command(
+    entries: list[Any], template_hook: dict[str, Any]
+) -> tuple[dict[str, Any] | None, int]:
+    """Find the existing hook command that matches the canonical AI Guardian hook.
+
+    Args:
+        entries: Existing hook command entries for one event entry.
+        template_hook: Canonical AI Guardian hook command definition.
+
+    Returns:
+        tuple[dict[str, Any] | None, int]: The matched hook command and its
+        index, or `(None, -1)` when no match exists.
+    """
+    template_type = template_hook.get("type")
+    template_command = template_hook.get("command")
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("type") != template_type:
+            continue
+        if entry.get("command") == template_command:
             return entry, index
     return None, -1
 
@@ -511,6 +621,8 @@ def _serialize_toml_hooks(content: dict[str, Any]) -> str:
     """
     lines: list[str] = []
     for event_name, event_entries in _ordered_hook_events(content):
+        if event_name == "state":
+            continue
         if not isinstance(event_entries, list):
             continue
         for entry in event_entries:
@@ -531,7 +643,48 @@ def _serialize_toml_hooks(content: dict[str, Any]) -> str:
                 ):
                     lines.append(f"{key} = {_serialize_toml_value(value)}")
             lines.append("")
+    state_lines = _serialize_toml_hook_state(content.get("state"))
+    if lines and state_lines:
+        lines.append("")
+    lines.extend(state_lines)
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _serialize_toml_hook_state(value: Any) -> list[str]:
+    """Serialize Codex hook trust state tables.
+
+    Args:
+        value: Parsed `hooks.state` mapping from an existing Codex config.
+
+    Returns:
+        list[str]: TOML lines representing the hook trust state.
+    """
+    if not isinstance(value, dict) or not value:
+        return []
+
+    lines = ["[hooks.state]", ""]
+    for state_key, state_value in sorted(value.items()):
+        if not isinstance(state_key, str) or not isinstance(state_value, dict):
+            continue
+        lines.append(f"[hooks.state.{_serialize_toml_key(state_key)}]")
+        for key, item_value in _ordered_mapping_items(state_value):
+            lines.append(f"{_serialize_toml_key(key)} = {_serialize_toml_value(item_value)}")
+        lines.append("")
+    return lines
+
+
+def _serialize_toml_key(value: str) -> str:
+    """Serialize one TOML key segment.
+
+    Args:
+        value: Raw key segment.
+
+    Returns:
+        str: TOML-safe key segment.
+    """
+    if value.isidentifier():
+        return value
+    return json.dumps(value)
 
 
 def _serialize_toml_value(value: Any) -> str:
@@ -569,6 +722,19 @@ def _serialize_legacy_hooks(content: dict[str, Any]) -> str:
         str: JSON document with a trailing newline.
     """
     return json.dumps(content, indent=2, sort_keys=True) + "\n"
+
+
+def _legacy_hooks_are_empty(content: dict[str, Any]) -> bool:
+    """Report whether a normalized legacy hooks document contains any hooks.
+
+    Args:
+        content: Normalized legacy hooks JSON document.
+
+    Returns:
+        bool: `True` when there are no remaining hook events to persist.
+    """
+    hooks = content.get("hooks")
+    return not isinstance(hooks, dict) or not hooks
 
 
 def _ordered_hook_events(content: dict[str, Any]) -> list[tuple[str, Any]]:
@@ -626,6 +792,18 @@ def _write_managed_file(codex_home: Path, name: str, content: str) -> Path:
         return prepared_file
     prepared_file.write_text(content, encoding="utf-8")
     return prepared_file
+
+
+def _remove_managed_file(codex_home: Path, name: str) -> None:
+    """Remove a Forge-managed file when it is no longer active.
+
+    Args:
+        codex_home: Host Codex home directory.
+        name: File name inside the managed directory.
+    """
+    managed_file = codex_home / FORGE_CODEX_MANAGED_DIR_NAME / name
+    if managed_file.is_file() or managed_file.is_symlink():
+        managed_file.unlink()
 
 
 def _ensure_managed_codex_home_links(codex_home: Path) -> None:
