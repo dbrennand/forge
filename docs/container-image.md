@@ -38,6 +38,8 @@ Artifacts produced:
 
 Notes:
 - `TARGETARCH` is mapped to the upstream GitHub CLI archive naming.
+- The downloaded archive is verified against the pinned SHA-256 build argument for
+  the target architecture before extraction.
 - The downloaded archive is unpacked and only the `gh` binary is copied forward.
 
 ### `codex-builder`
@@ -59,6 +61,9 @@ Artifacts produced:
 
 Notes:
 - Codex is installed globally as `@openai/codex@${CODEX_VERSION}`.
+- The package version is pinned, but Forge still relies on npm registry integrity
+  metadata and TLS for this install because the Dockerfile does not carry an npm
+  lockfile for the global package installation.
 - The npm cache is cleaned before the stage completes.
 
 ### `uv-builder`
@@ -80,6 +85,8 @@ Artifacts produced:
 
 Notes:
 - `TARGETARCH` is mapped to the upstream `uv` Linux GNU archive naming.
+- The downloaded archive is verified against the pinned SHA-256 build argument for
+  the target architecture before extraction.
 - Only the `uv` and `uvx` binaries are copied into the final image.
 
 ### `gitleaks-builder`
@@ -100,6 +107,8 @@ Artifacts produced:
 
 Notes:
 - `TARGETARCH` is mapped to the upstream `gitleaks` Linux archive naming.
+- The downloaded archive is verified against the pinned SHA-256 build argument for
+  the target architecture before extraction.
 - Only the `gitleaks` binary is copied into the final image.
 
 ### Final Runtime Stage

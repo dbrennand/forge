@@ -8,7 +8,6 @@ import signal
 import socket
 import sys
 import termios
-import threading
 import tty
 from collections.abc import Callable
 from contextlib import suppress
@@ -194,33 +193,22 @@ class DockerRunner:
         Raises:
             ContainerRuntimeError: If output streaming fails.
         """
-        stream_error: list[BaseException] = []
-
-        def _pump() -> None:
-            """Pump attached container output into Forge stdio streams."""
+        with _SignalForwarder(container):
             try:
                 for stdout_chunk, stderr_chunk in container.attach(
                     stream=True,
                     stdout=True,
                     stderr=True,
+                    logs=True,
                     demux=True,
                 ):
                     if stdout_chunk:
                         write_stdout(stdout_chunk, stream=self.stdout)
                     if stderr_chunk:
                         write_stderr(stderr_chunk, stream=self.stderr)
-            except BaseException as exc:  # pragma: no cover
-                stream_error.append(exc)
-
-        thread = threading.Thread(target=_pump, daemon=True)
-        thread.start()
-
-        with _SignalForwarder(container):
+            except Exception as exc:  # pragma: no cover
+                raise ContainerRuntimeError(f"Streaming container output failed: {exc}") from exc
             result = container.wait()
-
-        thread.join()
-        if stream_error:
-            raise ContainerRuntimeError(f"Streaming container output failed: {stream_error[0]}")
         return int(result["StatusCode"])
 
     def _run_interactive(self, container: Any) -> int:
@@ -257,11 +245,12 @@ class DockerRunner:
         ):
             try:
                 while True:
-                    if self._container_exited(container):
-                        break
                     events = selector.select(timeout=0.1)
                     if not events:
+                        if self._container_exited(container):
+                            break
                         continue
+                    should_stop = False
                     for key, _ in events:
                         if key.data == "stdin":
                             try:
@@ -286,11 +275,11 @@ class DockerRunner:
                                         "Interactive attach disconnected while "
                                         "the container was still running"
                                     )
-                                break
+                                should_stop = True
+                                continue
                             os.write(stdout_fd, data)
-                    else:
-                        continue
-                    break
+                    if should_stop:
+                        break
             finally:
                 selector.close()
                 termios.tcsetattr(stdin_fd, termios.TCSADRAIN, previous_termios)

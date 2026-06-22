@@ -99,11 +99,71 @@ def test_validate_volume_sources_rejects_duplicate_host_path(tmp_path: Path) -> 
         validate_volume_sources(mounts, reserved_host_paths=())
 
 
+@pytest.mark.parametrize(
+    ("first_source", "second_source"),
+    [
+        ("cache", "cache/subdir"),
+        ("cache/subdir", "cache"),
+    ],
+)
+def test_validate_volume_sources_rejects_overlapping_extra_sources(
+    tmp_path: Path,
+    first_source: str,
+    second_source: str,
+) -> None:
+    """Reject extra mount source paths that overlap by ancestry."""
+    first_path = tmp_path / first_source
+    second_path = tmp_path / second_source
+    mounts = (
+        VolumeMount(
+            host_path=first_path,
+            container_path=PurePosixPath("/cache-a"),
+            mode="rw",
+        ),
+        VolumeMount(
+            host_path=second_path,
+            container_path=PurePosixPath("/cache-b"),
+            mode="ro",
+        ),
+    )
+
+    with pytest.raises(ValidationError):
+        validate_volume_sources(mounts, reserved_host_paths=())
+
+
 def test_validate_volume_sources_rejects_reserved_host_path(tmp_path: Path) -> None:
     """Reject extra mounts that reuse reserved Forge host paths."""
     reserved_path = tmp_path / "workspace"
     mount = VolumeMount(
         host_path=reserved_path,
+        container_path=PurePosixPath("/cache"),
+        mode="rw",
+    )
+
+    with pytest.raises(ValidationError):
+        validate_volume_sources((mount,), reserved_host_paths=(reserved_path,))
+
+
+@pytest.mark.parametrize(
+    ("source", "reserved"),
+    [
+        ("home", "home/.codex"),
+        ("home/.config", "home/.config/gh"),
+        ("home/.codex/auth.json", "home/.codex"),
+        ("workspace/subdir", "workspace"),
+        ("agent-parent", "agent-parent/agent.sock"),
+    ],
+)
+def test_validate_volume_sources_rejects_reserved_host_path_overlap(
+    tmp_path: Path,
+    source: str,
+    reserved: str,
+) -> None:
+    """Reject extra mount sources that contain or sit inside reserved host paths."""
+    source_path = tmp_path / source
+    reserved_path = tmp_path / reserved
+    mount = VolumeMount(
+        host_path=source_path,
         container_path=PurePosixPath("/cache"),
         mode="rw",
     )

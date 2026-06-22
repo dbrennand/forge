@@ -2,6 +2,8 @@ FROM debian:bookworm-slim AS gh-builder
 
 ARG GH_VERSION=2.93.0
 ARG TARGETARCH
+ARG GH_AMD64_SHA256=02d1290eba130e0b896f3709ffff22e1c75a51475ddb70476a85abc6b5807af0
+ARG GH_ARM64_SHA256=c55feb33684abba57e9909737340d5b39282257c0363e1edde6785ac4a413be7
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -13,13 +15,14 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN case "${TARGETARCH}" in \
-        amd64) gh_arch="amd64" ;; \
-        arm64) gh_arch="arm64" ;; \
+        amd64) gh_arch="amd64"; gh_sha256="${GH_AMD64_SHA256}" ;; \
+        arm64) gh_arch="arm64"; gh_sha256="${GH_ARM64_SHA256}" ;; \
         *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac \
     && curl --fail --location --silent --show-error \
         "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${gh_arch}.tar.gz" \
         --output /tmp/gh.tgz \
+    && echo "${gh_sha256}  /tmp/gh.tgz" | sha256sum --check - \
     && tar -xzf /tmp/gh.tgz -C /tmp \
     && install "/tmp/gh_${GH_VERSION}_linux_${gh_arch}/bin/gh" /usr/local/bin/gh \
     && rm -rf /tmp/gh.tgz "/tmp/gh_${GH_VERSION}_linux_${gh_arch}"
@@ -28,6 +31,8 @@ FROM debian:bookworm-slim AS uv-builder
 
 ARG UV_VERSION=0.11.21
 ARG TARGETARCH
+ARG UV_AMD64_SHA256=8c88519b0ef0af9801fcdee419bbb12116bd9e6b18e162ae093c932d8b264050
+ARG UV_ARM64_SHA256=88e800834007cc5efd4675f166eb2a51e7e3ad19876d85fa8805a6fb5c922397
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -39,13 +44,14 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN case "${TARGETARCH}" in \
-        amd64) uv_dist="uv-x86_64-unknown-linux-gnu" ;; \
-        arm64) uv_dist="uv-aarch64-unknown-linux-gnu" ;; \
+        amd64) uv_dist="uv-x86_64-unknown-linux-gnu"; uv_sha256="${UV_AMD64_SHA256}" ;; \
+        arm64) uv_dist="uv-aarch64-unknown-linux-gnu"; uv_sha256="${UV_ARM64_SHA256}" ;; \
         *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac \
     && curl --fail --location --silent --show-error \
         "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${uv_dist}.tar.gz" \
         --output /tmp/uv.tgz \
+    && echo "${uv_sha256}  /tmp/uv.tgz" | sha256sum --check - \
     && tar -xzf /tmp/uv.tgz -C /tmp \
     && install "/tmp/${uv_dist}/uv" /usr/local/bin/uv \
     && install "/tmp/${uv_dist}/uvx" /usr/local/bin/uvx \
@@ -55,6 +61,8 @@ FROM debian:bookworm-slim AS gitleaks-builder
 
 ARG GITLEAKS_VERSION=8.30.1
 ARG TARGETARCH
+ARG GITLEAKS_AMD64_SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+ARG GITLEAKS_ARM64_SHA256=e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -66,13 +74,14 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN case "${TARGETARCH}" in \
-        amd64) gitleaks_arch="x64" ;; \
-        arm64) gitleaks_arch="arm64" ;; \
+        amd64) gitleaks_arch="x64"; gitleaks_sha256="${GITLEAKS_AMD64_SHA256}" ;; \
+        arm64) gitleaks_arch="arm64"; gitleaks_sha256="${GITLEAKS_ARM64_SHA256}" ;; \
         *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac \
     && curl --fail --location --silent --show-error \
         "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${gitleaks_arch}.tar.gz" \
         --output /tmp/gitleaks.tgz \
+    && echo "${gitleaks_sha256}  /tmp/gitleaks.tgz" | sha256sum --check - \
     && tar -xzf /tmp/gitleaks.tgz -C /tmp \
     && install /tmp/gitleaks /usr/local/bin/gitleaks \
     && rm -rf /tmp/gitleaks.tgz /tmp/gitleaks

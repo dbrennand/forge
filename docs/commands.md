@@ -68,8 +68,11 @@ Notes about `--volume`:
 - `HOST` may be absolute or relative to the current working directory.
 - `CTR` must be an absolute container path.
 - The optional mode defaults to `rw`.
-- Extra mounts cannot overlap Forge-managed paths such as `/workspace`,
-  `/home/forge/.codex`, `/home/forge/.config/gh`, or the SSH agent socket path.
+- Extra mount targets cannot overlap Forge-managed container paths such as
+  `/workspace`, `/home/forge/.codex`, `/home/forge/.config/gh`, or the SSH agent
+  socket path.
+- Extra mount sources cannot overlap Forge-managed host paths such as the
+  workspace, `~/.codex`, `$HOME/.config/gh`, or the active SSH agent socket.
 
 ### Image Selection
 

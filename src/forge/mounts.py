@@ -87,26 +87,33 @@ def validate_volume_targets(mounts: tuple[VolumeMount, ...]) -> None:
 def validate_volume_sources(
     mounts: tuple[VolumeMount, ...], *, reserved_host_paths: tuple[Path, ...]
 ) -> None:
-    """Ensure extra mount sources do not duplicate reserved or repeated host paths.
+    """Ensure extra mount sources do not overlap reserved or repeated host paths.
 
     Args:
         mounts: Extra container mounts requested by the user.
         reserved_host_paths: Host paths already used for Forge-managed mounts.
 
     Raises:
-        ValidationError: If any source path duplicates another source or a reserved path.
+        ValidationError: If any source path overlaps another source or a reserved path.
     """
-    seen_host_paths: set[Path] = set()
-    reserved_sources = set(reserved_host_paths)
+    seen_host_paths: list[Path] = []
+    reserved_sources = tuple(_normalize_host_path(path) for path in reserved_host_paths)
 
     for mount in mounts:
-        if mount.host_path in seen_host_paths:
-            raise ValidationError(f"Duplicate host volume source: {mount.host_path}")
-        if mount.host_path in reserved_sources:
-            raise ValidationError(
-                f"Extra volume source {mount.host_path} overlaps a reserved host path"
-            )
-        seen_host_paths.add(mount.host_path)
+        host_path = _normalize_host_path(mount.host_path)
+        for seen_host_path in seen_host_paths:
+            if _host_paths_overlap(host_path, seen_host_path):
+                if host_path == seen_host_path:
+                    raise ValidationError(f"Duplicate host volume source: {host_path}")
+                raise ValidationError(
+                    f"Extra volume source {host_path} overlaps extra volume source {seen_host_path}"
+                )
+        for reserved_source in reserved_sources:
+            if _host_paths_overlap(host_path, reserved_source):
+                raise ValidationError(
+                    f"Extra volume source {host_path} overlaps reserved host path {reserved_source}"
+                )
+        seen_host_paths.append(host_path)
 
 
 def _paths_overlap(left: PurePosixPath, right: PurePosixPath) -> bool:
@@ -120,6 +127,31 @@ def _paths_overlap(left: PurePosixPath, right: PurePosixPath) -> bool:
         bool: `True` when either path contains the other.
     """
     return left == right or left in right.parents or right in left.parents
+
+
+def _host_paths_overlap(left: Path, right: Path) -> bool:
+    """Report whether two host paths overlap by ancestry or equality.
+
+    Args:
+        left: First resolved host path.
+        right: Second resolved host path.
+
+    Returns:
+        bool: `True` when either path contains the other.
+    """
+    return left == right or left in right.parents or right in left.parents
+
+
+def _normalize_host_path(path: Path) -> Path:
+    """Resolve a host path before mount source comparisons.
+
+    Args:
+        path: Host path to normalize.
+
+    Returns:
+        Path: Expanded and resolved host path.
+    """
+    return path.expanduser().resolve()
 
 
 def _normalize_container_path(raw_path: str) -> PurePosixPath:

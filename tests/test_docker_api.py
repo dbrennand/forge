@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import re
 import signal
@@ -218,6 +219,141 @@ def test_signal_forwarder_uses_resize_callback_for_sigwinch() -> None:
     forwarder._handler(signal.SIGWINCH, None)
 
     assert calls == ["resize"]
+
+
+def test_run_streaming_replays_existing_stdout_and_stderr() -> None:
+    """Forward non-interactive output already present when Forge starts reading logs."""
+    stdout = io.BytesIO()
+    stderr = io.BytesIO()
+    runner = DockerRunner(client=object(), stdout=stdout, stderr=stderr)
+    observed_kwargs: dict[str, object] = {}
+
+    class FakeContainer:
+        """Capture log streaming arguments while returning demuxed output."""
+
+        def attach(self, **kwargs: object) -> list[tuple[bytes | None, bytes | None]]:
+            """Return output that may have been emitted before log streaming began."""
+            observed_kwargs.update(kwargs)
+            return [(b"out\n", None), (None, b"err\n")]
+
+        def wait(self) -> dict[str, int]:
+            """Report successful container exit."""
+            return {"StatusCode": 0}
+
+    assert runner._run_streaming(FakeContainer()) == 0
+    assert observed_kwargs == {
+        "stream": True,
+        "stdout": True,
+        "stderr": True,
+        "logs": True,
+        "demux": True,
+    }
+    assert stdout.getvalue() == b"out\n"
+    assert stderr.getvalue() == b"err\n"
+
+
+def test_run_interactive_drains_socket_output_after_container_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Write pending interactive output even when Docker already reports exit."""
+    writes: list[bytes] = []
+
+    class FakeSocket:
+        """Socket-like object with one pending output chunk."""
+
+        def __init__(self) -> None:
+            """Initialize the socket with pending output."""
+            self.recv_calls = 0
+
+        def setblocking(self, value: bool) -> None:
+            """Accept nonblocking mode changes."""
+
+        def recv(self, size: int) -> bytes:
+            """Return one pending output chunk."""
+            self.recv_calls += 1
+            return b"trailing output"
+
+        def sendall(self, data: bytes) -> None:
+            """Accept stdin writes."""
+
+    class FakeAttachment:
+        """Docker socket attachment wrapper."""
+
+        def __init__(self) -> None:
+            """Initialize the wrapped socket."""
+            self._sock = FakeSocket()
+            self.closed = False
+
+        def close(self) -> None:
+            """Record that the attachment was closed."""
+            self.closed = True
+
+    class FakeContainer:
+        """Interactive container whose socket has pending output after exit."""
+
+        attrs: dict[str, dict[str, int]] = {"State": {"ExitCode": 0}}
+
+        def __init__(self) -> None:
+            """Initialize the fake container."""
+            self.attachment = FakeAttachment()
+
+        def attach_socket(self, params: dict[str, int]) -> FakeAttachment:
+            """Return the fake Docker attachment."""
+            return self.attachment
+
+        def resize(self, height: int, width: int) -> None:
+            """Accept terminal resize requests."""
+
+        def wait(self) -> dict[str, int]:
+            """Report successful container exit."""
+            return {"StatusCode": 0}
+
+    class FakeSelector:
+        """Selector that reports pending socket output once."""
+
+        def __init__(self) -> None:
+            """Initialize selector state."""
+            self.socket_key: SimpleNamespace | None = None
+            self.select_calls = 0
+
+        def register(self, fileobj: object, events: int, data: str) -> None:
+            """Capture selector registrations."""
+            if data == "socket":
+                self.socket_key = SimpleNamespace(data=data)
+
+        def unregister(self, fileobj: object) -> None:
+            """Accept unregister calls."""
+
+        def select(self, timeout: float) -> list[tuple[SimpleNamespace, None]]:
+            """Return one socket event before becoming idle."""
+            self.select_calls += 1
+            if self.select_calls == 1:
+                assert self.socket_key is not None
+                return [(self.socket_key, None)]
+            return []
+
+        def close(self) -> None:
+            """Accept selector cleanup."""
+
+    class ExitAwareRunner(DockerRunner):
+        """Runner that reports the container as already exited."""
+
+        def _container_exited(self, container: object) -> bool:
+            """Report that Docker already marked the container exited."""
+            return True
+
+    monkeypatch.setattr("forge.docker_api.selectors.DefaultSelector", FakeSelector)
+    monkeypatch.setattr("forge.docker_api.sys.stdin", SimpleNamespace(fileno=lambda: 10))
+    monkeypatch.setattr("forge.docker_api.sys.stdout", SimpleNamespace(fileno=lambda: 11))
+    monkeypatch.setattr("forge.docker_api.termios.tcgetattr", lambda fd: ["raw"])
+    monkeypatch.setattr("forge.docker_api.termios.tcsetattr", lambda fd, when, attrs: None)
+    monkeypatch.setattr("forge.docker_api.tty.setraw", lambda fd: None)
+    monkeypatch.setattr("forge.docker_api.os.write", lambda fd, data: writes.append(data))
+
+    runner = ExitAwareRunner(client=object())
+
+    assert runner._run_interactive(FakeContainer()) == 0
+    assert writes == [b"trailing output"]
 
 
 def test_raw_attached_socket_uses_underlying_socket() -> None:
